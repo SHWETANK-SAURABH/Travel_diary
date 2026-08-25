@@ -1,26 +1,84 @@
 @import "tailwindcss";
 
+/* ---------------------------------------------------------------------------
+ * TravelDiary design tokens.
+ *
+ * Direction: premium, editorial, modern-Indian, vibrant but sophisticated.
+ * Deliberately NOT a SaaS-dashboard palette — warm paper background instead
+ * of stark white/grey, a marigold accent instead of "brand blue", a serif
+ * display face for editorial weight on headings.
+ * ------------------------------------------------------------------------- */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Neutrals — warm ivory paper, ink text (not pure black/white) */
+  --color-paper: #faf6ee;
+  --color-paper-raised: #ffffff;
+  --color-ink: #211d17;
+  --color-ink-muted: #6b6355;
+  --color-border: #e6ddc9;
+
+  /* Accents — marigold (primary), deep indigo (secondary), terracotta (tertiary) */
+  --color-marigold-50: #fdf3e6;
+  --color-marigold-400: #e8922f;
+  --color-marigold-500: #d97a1a;
+  --color-marigold-600: #b8630f;
+
+  --color-navy-500: #2a3568;
+  --color-navy-600: #1e2750;
+
+  --color-terracotta-500: #bd5230;
+
+  --color-success: #2f6b4f;
+  --color-danger: #b3261e;
+
+  /* Radii — modest, editorial. Never pill-shaped by default. */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  /* Shadows — soft and grounded, no glassmorphism/glow */
+  --shadow-card: 0 1px 2px rgba(33, 29, 23, 0.06), 0 4px 16px rgba(33, 29, 23, 0.06);
+  --shadow-panel: 0 8px 30px rgba(33, 29, 23, 0.12);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-paper: var(--color-paper);
+  --color-paper-raised: var(--color-paper-raised);
+  --color-ink: var(--color-ink);
+  --color-ink-muted: var(--color-ink-muted);
+  --color-border: var(--color-border);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-marigold-50: var(--color-marigold-50);
+  --color-marigold-400: var(--color-marigold-400);
+  --color-marigold-500: var(--color-marigold-500);
+  --color-marigold-600: var(--color-marigold-600);
+
+  --color-navy-500: var(--color-navy-500);
+  --color-navy-600: var(--color-navy-600);
+
+  --color-terracotta-500: var(--color-terracotta-500);
+
+  --color-success: var(--color-success);
+  --color-danger: var(--color-danger);
+
+  --font-display: var(--font-display-raw), Georgia, serif;
+  --font-sans: var(--font-sans-raw), system-ui, sans-serif;
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-panel: var(--shadow-panel);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
 }

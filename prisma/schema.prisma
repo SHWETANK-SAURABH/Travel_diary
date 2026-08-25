@@ -1,0 +1,661 @@
+// ---------------------------------------------------------------------------
+// TravelDiary — Phase 1 foundation schema
+//
+// Design notes (see /docs/database.md for the full rationale):
+//  - Location is a single self-referencing hierarchy table (Country > State >
+//    Region > City) so future admin-added levels don't require a migration.
+//  - Content models (Festival, Destination, Experience, Food, Event) carry
+//    their own lat/lng for fast bounding-box queries via Prisma, PLUS an
+//    `Unsupported("geography(Point,4326)")` column for precise PostGIS
+//    queries (ST_DWithin, ST_Contains, etc.) run via $queryRaw.
+//  - Media, SavedContent and VisitedContent are polymorphic via a
+//    `contentType` enum + `contentId` string pair, since Postgres/Prisma has
+//    no native polymorphic foreign key. Referential integrity for these is
+//    enforced at the service layer (see src/features/*/service.ts), not the
+//    database — a documented, deliberate trade-off.
+//  - Every field that could plausibly come from an admin, a script, or an
+//    LLM in the future (dates, best-time, categories) carries an explicit
+//    verification/source trail instead of being treated as ground truth.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis, pg_trgm]
+}
+
+// ---------------------------------------------------------------------------
+// Enums — shared, reused across models. Anything editorial/taxonomy-like
+// (categories, tags) is a DB-backed model instead, per the product spec.
+// ---------------------------------------------------------------------------
+
+enum LocationType {
+  COUNTRY
+  STATE
+  REGION
+  CITY
+}
+
+enum LocationPrecision {
+  EXACT
+  APPROXIMATE
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum FestivalPopularity {
+  POPULAR
+  HIDDEN
+  LOCAL_EMERGING
+}
+
+enum RecurrenceType {
+  ANNUAL_FIXED_DATE
+  ANNUAL_LUNAR_OR_REGIONAL_CALENDAR
+  ANNUAL_VARIABLE
+  ONE_TIME
+  IRREGULAR
+}
+
+enum DateConfidence {
+  NOT_ANNOUNCED
+  AI_SUGGESTED
+  EXPECTED
+  CONFIRMED
+  ADMIN_VERIFIED
+}
+
+enum VerificationStatus {
+  UNVERIFIED
+  AI_GENERATED
+  ADMIN_VERIFIED
+  ADMIN_OVERRIDDEN
+}
+
+enum BudgetLevel {
+  BUDGET
+  MID_RANGE
+  LUXURY
+}
+
+enum TravelStyle {
+  RELAXED
+  ADVENTURE
+  CULTURAL
+  OFFBEAT
+  MIXED
+}
+
+enum CrowdPreference {
+  PREFER_CROWDED
+  PREFER_QUIET
+  NO_PREFERENCE
+}
+
+enum TagCategory {
+  INTEREST
+  TRAVELLER_FIT
+  GENERAL
+}
+
+enum MediaType {
+  IMAGE
+  VIDEO
+}
+
+// Polymorphic "which table does contentId point to" discriminator, shared by
+// Media, SavedContent, VisitedContent and TripItem.
+enum ContentType {
+  FESTIVAL
+  DESTINATION
+  EXPERIENCE
+  FOOD
+  EVENT
+}
+
+enum TripVisibility {
+  PRIVATE
+  UNLISTED
+  PUBLIC
+}
+
+enum AnalyticsEventType {
+  PAGE_VIEW
+  FESTIVAL_VIEW
+  DESTINATION_VIEW
+  MAP_INTERACTION
+  MAP_MARKER_CLICK
+  MAP_ZOOM
+  STATE_EXPLORATION
+  SEARCH_QUERY
+  SEARCH_ZERO_RESULT
+  SAVE
+  TRIP_CREATED
+  RECOMMENDATION_CLICK
+}
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+// ---------------------------------------------------------------------------
+// Auth (Auth.js / NextAuth v5 — Prisma adapter shape)
+// ---------------------------------------------------------------------------
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole  @default(USER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts Account[]
+  sessions Session[]
+
+  preference        UserPreference?
+  savedContent      SavedContent[]
+  visitedContent    VisitedContent[]
+  trips             Trip[]
+  verifiedFestivals FestivalOccurrence[] @relation("OccurrenceVerifiedBy")
+  analyticsEvents   AnalyticsEvent[]
+
+  @@index([email])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ---------------------------------------------------------------------------
+// User preferences — all optional. Drives the future recommendation engine.
+// ---------------------------------------------------------------------------
+
+model UserPreference {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  travelDateStart DateTime?
+  travelDateEnd   DateTime?
+  durationDays    Int?
+  travellerCount  Int?
+  budgetLevel     BudgetLevel?
+  travelStyle     TravelStyle?
+  crowdPreference CrowdPreference?
+
+  interests Tag[] @relation("UserPreferenceInterests")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Geographic hierarchy — India > State/UT > Region > City.
+// Self-referencing so new levels/nesting never require a schema change.
+// ---------------------------------------------------------------------------
+
+model Location {
+  id       String       @id @default(cuid())
+  type     LocationType
+  name     String
+  slug     String       @unique
+  parentId String?
+  parent   Location?    @relation("LocationHierarchy", fields: [parentId], references: [id], onDelete: Restrict)
+  children Location[]   @relation("LocationHierarchy")
+
+  latitude  Float?
+  longitude Float?
+  precision LocationPrecision                         @default(APPROXIMATE)
+  // Precise point + future polygon boundaries (state/city outlines) for the
+  // map's viewport queries. Populated/queried via raw SQL — see src/lib/geo.
+  geo       Unsupported("geography(Geometry, 4326)")?
+
+  isSeed Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  festivals    Festival[]
+  destinations Destination[]
+  experiences  Experience[]
+  foods        Food[]
+  events       Event[]
+  tripItems    TripItem[]
+
+  @@index([type])
+  @@index([parentId])
+  @@index([latitude, longitude])
+}
+
+// ---------------------------------------------------------------------------
+// Taxonomy — DB-backed, never hardcoded in application code.
+// ---------------------------------------------------------------------------
+
+model FestivalCategory {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  description String?
+  order       Int     @default(0)
+
+  festivals Festival[]
+}
+
+model Tag {
+  id       String      @id @default(cuid())
+  slug     String      @unique
+  name     String
+  category TagCategory @default(GENERAL)
+
+  festivals             Festival[]       @relation("FestivalTags")
+  travellerFitFestivals Festival[]       @relation("FestivalTravellerFit")
+  destinations          Destination[]    @relation("DestinationTags")
+  experiences           Experience[]     @relation("ExperienceTags")
+  foods                 Food[]           @relation("FoodTags")
+  preferences           UserPreference[] @relation("UserPreferenceInterests")
+
+  @@index([category])
+}
+
+// ---------------------------------------------------------------------------
+// Festival — one permanent public page per festival. Year-specific dates
+// live in FestivalOccurrence, not on the festival itself.
+// ---------------------------------------------------------------------------
+
+model Festival {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  name        String
+  description String        @db.Text
+  status      ContentStatus @default(DRAFT)
+
+  categoryId String
+  category   FestivalCategory @relation(fields: [categoryId], references: [id])
+
+  popularity FestivalPopularity @default(LOCAL_EMERGING)
+
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  latitude  Float?
+  longitude Float?
+  precision LocationPrecision                      @default(APPROXIMATE)
+  geo       Unsupported("geography(Point, 4326)")?
+
+  recurrenceType  RecurrenceType @default(ANNUAL_VARIABLE)
+  recurrenceNotes String?
+
+  typicalDurationDays Int?
+
+  tags             Tag[] @relation("FestivalTags")
+  travellerFitTags Tag[] @relation("FestivalTravellerFit")
+
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  verificationSource String?
+  lastVerifiedAt     DateTime?
+
+  isSeed Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  occurrences  FestivalOccurrence[]
+  events       Event[]
+  experiences  Experience[]         @relation("FestivalExperiences")
+  foods        Food[]               @relation("FestivalFoods")
+  destinations Destination[]        @relation("FestivalDestinations")
+
+  @@index([status])
+  @@index([popularity])
+  @@index([locationId])
+  @@index([categoryId])
+  @@index([latitude, longitude])
+}
+
+// One row per year's occurrence of a festival — supports "date not
+// announced" all the way through to "admin verified", independent of the
+// festival's evergreen public page.
+model FestivalOccurrence {
+  id         String   @id @default(cuid())
+  festivalId String
+  festival   Festival @relation(fields: [festivalId], references: [id], onDelete: Cascade)
+
+  year      Int
+  startDate DateTime?
+  endDate   DateTime?
+
+  dateConfidence DateConfidence @default(NOT_ANNOUNCED)
+
+  verifiedByUserId String?
+  verifiedBy       User?     @relation("OccurrenceVerifiedBy", fields: [verifiedByUserId], references: [id], onDelete: SetNull)
+  verifiedAt       DateTime?
+
+  source String?
+  notes  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([festivalId, year])
+  @@index([year])
+  @@index([dateConfidence])
+}
+
+// ---------------------------------------------------------------------------
+// Destination
+// ---------------------------------------------------------------------------
+
+model Destination {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  name        String
+  description String        @db.Text
+  status      ContentStatus @default(DRAFT)
+
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  latitude  Float?
+  longitude Float?
+  precision LocationPrecision                      @default(APPROXIMATE)
+  geo       Unsupported("geography(Point, 4326)")?
+
+  bestTimeStartMonth  Int? // 1-12
+  bestTimeEndMonth    Int? // 1-12
+  altTimeStartMonth   Int?
+  altTimeEndMonth     Int?
+  bestTimeExplanation String?            @db.Text
+  bestTimeSource      VerificationStatus @default(UNVERIFIED)
+
+  budgetLevel           BudgetLevel?
+  approximateCostPerDay Int? // in INR, kept intentionally simple for V1
+
+  tags Tag[] @relation("DestinationTags")
+
+  verificationStatus VerificationStatus @default(UNVERIFIED)
+  lastVerifiedAt     DateTime?
+
+  isSeed Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  experiences Experience[] @relation("DestinationExperiences")
+  foods       Food[]       @relation("DestinationFoods")
+  festivals   Festival[]   @relation("FestivalDestinations")
+  events      Event[]
+
+  @@index([status])
+  @@index([locationId])
+  @@index([latitude, longitude])
+  @@index([budgetLevel])
+}
+
+// ---------------------------------------------------------------------------
+// Experience
+// ---------------------------------------------------------------------------
+
+model Experience {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  description String  @db.Text
+  category    String? // free-form for V1; promote to a taxonomy model if it grows
+
+  locationId String
+  location   Location @relation(fields: [locationId], references: [id])
+
+  latitude  Float?
+  longitude Float?
+
+  tags Tag[] @relation("ExperienceTags")
+
+  isSeed Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  destinations Destination[] @relation("DestinationExperiences")
+  festivals    Festival[]    @relation("FestivalExperiences")
+
+  @@index([locationId])
+  @@index([latitude, longitude])
+}
+
+// ---------------------------------------------------------------------------
+// Food
+// ---------------------------------------------------------------------------
+
+model Food {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  description String  @db.Text
+  region      String?
+
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+
+  tags Tag[] @relation("FoodTags")
+
+  isSeed Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  destinations Destination[] @relation("DestinationFoods")
+  festivals    Festival[]    @relation("FestivalFoods")
+
+  @@index([locationId])
+}
+
+// ---------------------------------------------------------------------------
+// Event — a scheduled happening tied to a festival and/or destination.
+// ---------------------------------------------------------------------------
+
+model Event {
+  id   String    @id @default(cuid())
+  name String
+  date DateTime?
+
+  eventType String? // free-form for V1; promote to taxonomy if it grows
+
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+
+  festivalId String?
+  festival   Festival? @relation(fields: [festivalId], references: [id], onDelete: Cascade)
+
+  destinationId String?
+  destination   Destination? @relation(fields: [destinationId], references: [id], onDelete: Cascade)
+
+  isSeed Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([festivalId])
+  @@index([destinationId])
+  @@index([locationId])
+  @@index([date])
+}
+
+// ---------------------------------------------------------------------------
+// Media — reusable, not coupled to a single content type.
+//
+// Deliberately polymorphic via (contentType, contentId) only — NOT a Prisma
+// @relation. A single FK column cannot validly reference four different
+// tables, so there is no DB-level foreign key here; the association is
+// resolved and validated in src/features/*/service.ts (see mediaFor()).
+// ---------------------------------------------------------------------------
+
+model Media {
+  id       String    @id @default(cuid())
+  url      String
+  altText  String?
+  type     MediaType @default(IMAGE)
+  order    Int       @default(0)
+  metadata Json?
+
+  contentType ContentType
+  contentId   String
+
+  createdAt DateTime @default(now())
+
+  @@index([contentType, contentId])
+  @@index([order])
+}
+
+// ---------------------------------------------------------------------------
+// Saved / Visited content — polymorphic via (contentType, contentId).
+// No DB-level FK across the polymorphic boundary; integrity is enforced in
+// the service layer (see src/features/users/service.ts).
+// ---------------------------------------------------------------------------
+
+model SavedContent {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  contentType ContentType
+  contentId   String
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, contentType, contentId])
+  @@index([userId])
+  @@index([contentType, contentId])
+}
+
+model VisitedContent {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  contentType ContentType
+  contentId   String
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, contentType, contentId])
+  @@index([userId])
+  @@index([contentType, contentId])
+}
+
+// ---------------------------------------------------------------------------
+// Trips — V1 data model only, no UI yet.
+// ---------------------------------------------------------------------------
+
+model Trip {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name            String
+  visibility      TripVisibility @default(PRIVATE)
+  estimatedBudget Int?
+  days            Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items TripItem[]
+
+  @@index([userId])
+}
+
+model TripItem {
+  id     String @id @default(cuid())
+  tripId String
+  trip   Trip   @relation(fields: [tripId], references: [id], onDelete: Cascade)
+
+  day   Int
+  order Int @default(0)
+
+  contentType ContentType?
+  contentId   String?
+
+  locationId String?
+  location   Location? @relation(fields: [locationId], references: [id])
+
+  notes String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tripId, day, order])
+  @@index([contentType, contentId])
+}
+
+// ---------------------------------------------------------------------------
+// Analytics — thin event log behind a provider-agnostic adapter
+// (see src/lib/analytics). Kept minimal; a real product would fan this out
+// to a dedicated analytics store rather than the primary OLTP database.
+// ---------------------------------------------------------------------------
+
+model AnalyticsEvent {
+  id     String             @id @default(cuid())
+  type   AnalyticsEventType
+  userId String?
+  user   User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  path        String?
+  contentType ContentType?
+  contentId   String?
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([type])
+  @@index([createdAt])
+  @@index([contentType, contentId])
+}

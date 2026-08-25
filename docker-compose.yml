@@ -1,0 +1,16 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: traveldiary-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: traveldiary
+      POSTGRES_PASSWORD: traveldiary
+      POSTGRES_DB: traveldiary
+    ports:
+      - "5432:5432"
+    volumes:
+      - traveldiary-db-data:/var/lib/postgresql/data
+
+volumes:
+  traveldiary-db-data:
