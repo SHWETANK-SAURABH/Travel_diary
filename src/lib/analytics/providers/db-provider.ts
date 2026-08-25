@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import type { AnalyticsAdapter, AnalyticsEventInput } from "../adapter";
 
@@ -15,7 +16,7 @@ export class DbAnalyticsProvider implements AnalyticsAdapter {
         path: event.path,
         contentType: event.contentType,
         contentId: event.contentId,
-        metadata: event.metadata,
+        metadata: event.metadata as Prisma.InputJsonValue | undefined,
       },
     });
   }

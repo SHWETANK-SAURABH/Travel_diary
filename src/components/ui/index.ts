@@ -6,3 +6,4 @@ export * from "./Card";
 export * from "./Skeleton";
 export * from "./Modal";
 export * from "./ResponsivePanel";
+export * from "./PlaceholderPage";
