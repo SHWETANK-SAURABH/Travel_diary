@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { boundingBoxWhere, type BoundingBox } from "@/lib/geo";
 import { containsInsensitive } from "@/lib/search";
+import { getLocationIdsForState } from "@/features/locations/service";
 import type { FestivalListFilters } from "./types";
 
 const PUBLIC_FESTIVAL_SELECT = {
@@ -10,6 +11,7 @@ const PUBLIC_FESTIVAL_SELECT = {
   popularity: true,
   latitude: true,
   longitude: true,
+  precision: true,
   category: { select: { slug: true, name: true } },
 } as const;
 
@@ -17,12 +19,14 @@ export async function listPublishedFestivals(filters: FestivalListFilters = {}) 
   const page = filters.page ?? 1;
   const pageSize = Math.min(filters.pageSize ?? 24, 100);
 
+  const stateLocationIds = filters.stateSlug ? await getLocationIdsForState(filters.stateSlug) : null;
+
   return db.festival.findMany({
     where: {
       status: "PUBLISHED",
       category: filters.categorySlug ? { slug: filters.categorySlug } : undefined,
       popularity: filters.popularity,
-      locationId: filters.stateLocationId,
+      locationId: stateLocationIds ? { in: stateLocationIds } : filters.stateLocationId,
       tags: filters.tagIds?.length ? { some: { id: { in: filters.tagIds } } } : undefined,
     },
     select: PUBLIC_FESTIVAL_SELECT,

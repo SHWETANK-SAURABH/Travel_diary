@@ -7,7 +7,7 @@ import type { Festival, FestivalCategory, FestivalOccurrence, Tag } from "@prism
  */
 export type FestivalSummary = Pick<
   Festival,
-  "id" | "slug" | "name" | "popularity" | "latitude" | "longitude"
+  "id" | "slug" | "name" | "popularity" | "latitude" | "longitude" | "precision"
 > & {
   category: Pick<FestivalCategory, "slug" | "name">;
 };
@@ -22,7 +22,10 @@ export type FestivalDetail = Festival & {
 export interface FestivalListFilters {
   categorySlug?: string;
   popularity?: Festival["popularity"];
+  /** Exact Location id (e.g. a specific city). */
   stateLocationId?: string;
+  /** A STATE Location's slug — matches that state and every city/region under it. */
+  stateSlug?: string;
   tagIds?: string[];
   page?: number;
   pageSize?: number;

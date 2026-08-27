@@ -12,7 +12,7 @@ detailed field-by-field schema notes live in [`database.md`](./database.md).
 | Styling | Tailwind CSS v4 | Token-driven design system via `@theme`, no runtime CSS-in-JS cost, fast to keep consistent across many small components. |
 | Database | PostgreSQL + PostGIS, Prisma 6 ORM | The content graph (festival↔location↔destination↔event↔...) is relational; PostGIS gives real geospatial queries (`ST_DWithin`, GIST indexes) for the future map. Prisma 6 (not 7) deliberately — see "Prisma version" below. |
 | Auth | Auth.js v5 (NextAuth) + Prisma adapter | Google OAuth + passwordless email magic link, both handled by the library — no custom password hashing anywhere in this codebase. |
-| Map (planned) | MapLibre GL (vector, open-source, no per-load billing) | Selected but not yet integrated — see "Map, deferred" below. |
+| Map | MapLibre GL JS + OpenFreeMap (vector, open-source, no API key/billing) | Real, live map since Phase 3 — see "The Living India Map" below. |
 | Media | Adapter interface (`src/lib/media`) over S3-compatible storage | No vendor lock-in; local dev/no-credentials mode fails loudly instead of faking success. |
 | State | React Query (server state) + Zustand (guest/UI state) | Two different problems, two small tools, instead of one large global store. |
 | Deployment (planned) | Vercel (app) + managed Postgres w/ PostGIS (Neon/Supabase/RDS) | Cheap to start, scales without a rewrite. Not provisioned in Phase 1. |
@@ -138,14 +138,78 @@ wired up, rather than silently no-op-ing.
 - Account-scoped/query pages (`/trips`, `/profile`, `/search`, `/admin`) are
   `robots: { index: false }`.
 
-## Map, deferred
+## The Living India Map (Phase 3)
 
-MapLibre GL JS was selected in Phase 1 (open-source, vector tiles, no
-per-load billing, strong clustering support via `supercluster`) but is
-**not yet integrated** — building it is explicitly out of scope for this
-phase. `src/features/map/service.ts` and `src/lib/geo` are the contract the
-map UI will consume; `src/components/map/README.md` documents the intended
-split between that data layer and the presentational map component.
+**Stack**: MapLibre GL JS 6, styled with [OpenFreeMap](https://openfreemap.org)'s
+`positron` style (free, keyless, unlimited — no Mapbox/MapTiler account or
+billing to configure). State/UT boundaries are Natural Earth's admin-1
+dataset (public domain, redistribution-safe — deliberately *not* one of the
+commonly-linked "India states GeoJSON" repos, which turn out to be
+GADM-derived and prohibit commercial redistribution; see
+`public/geo/SOURCE.md`).
+
+**Architecture**: `src/components/map/MapCanvas.tsx` owns the MapLibre
+instance imperatively (`useEffect`, mount-once) and is the only file that
+touches the `maplibre-gl` API directly; `src/app/map/MapPageClient.tsx`
+owns all the React state (month, active layers, selected discovery/state,
+viewport) and never imports `maplibre-gl` itself. Discovery markers and
+clustering use MapLibre's native `cluster: true` GeoJSON source support —
+no `supercluster` or other clustering dependency needed. Layer toggling
+(Festivals/Destinations/Hidden Gems/Experiences/Food-Events) filters the
+in-memory discovery list client-side and calls `source.setData()` — no
+network round-trip per toggle, and clustering re-runs correctly on the
+filtered set since it operates on whatever's in the source.
+
+**Data flow**: `GET /api/map/viewport` (bbox + optional month →
+`getViewportContent()` in `src/features/map/service.ts`) is the only
+network call driven by panning/zooming, debounced 300ms on `moveend`.
+Clicking a marker fetches a small per-item preview via
+`GET /api/map/discovery`, kept separate from the viewport payload so that
+stays lightweight even with hundreds of markers in view. Clicking a state
+boundary fetches counts via `GET /api/map/state/[slug]`.
+
+**Map state preservation**: current center/zoom/month are written to the
+URL (`?lat=&lng=&zoom=&month=`) via `history.replaceState` — deliberately
+*not* through `next/navigation`'s router, since that would re-run an RSC
+fetch on every pan. Reading it back on load takes a specific hydration
+precaution: see "Two confirmed bugs" below.
+
+**"Hidden Gems" needed a schema change**: the layer requires destinations
+to carry a popularity/hidden classification the same way festivals already
+did, which Phase 1's schema didn't have. Rather than bolt on a
+destination-only concept, `ContentPopularity` (renamed from
+`FestivalPopularity`, migration `20260827202945`) is now shared by both
+`Festival.popularity` and `Destination.popularity`.
+
+### Two confirmed bugs, both fixed
+
+Building this surfaced two real, reproducible bugs — not environment
+flakiness — worth recording since they'll bite again if the map code is
+touched carelessly:
+
+1. **Turbopack breaks MapLibre's Web Worker.** Next.js 16's default
+   bundler doesn't correctly resolve maplibre-gl's internal tile-parsing
+   worker module when it's left to load the normal bundler-relative way —
+   the map silently never fires `load`/`idle`, no tiles ever request, and
+   nothing throws. Fix: `maplibre-gl-worker.mjs` + its sibling
+   `maplibre-gl-shared.mjs` are copied verbatim into `public/maplibre/` as
+   plain static files, and `setWorkerUrl()` points at them before any `Map`
+   is constructed (see the top of `MapCanvas.tsx` and
+   `public/maplibre/README.md`). Re-copy both files after bumping
+   `maplibre-gl`.
+2. **MapLibre's own CSS silently wins a Tailwind class fight.**
+   `maplibre-gl.css` sets `.maplibregl-map { position: relative }`; at
+   equal selector specificity, whichever stylesheet loads later in the
+   cascade wins, which in this bundle is maplibre-gl's — so a container
+   styled `absolute inset-0` collapses to zero height the moment MapLibre
+   initializes (`inset-0` does nothing once `position` isn't
+   absolute/fixed). Fixed by sizing the container with `h-full w-full`
+   against its already-sized flex parent instead of relying on `absolute`
+   positioning at all.
+
+Both were caught by driving a real headless-Chromium session against the
+production build (not just `tsc`/`eslint`/`next build` passing) —
+worth remembering next time "it builds cleanly" feels like enough.
 
 ## Known trade-offs
 

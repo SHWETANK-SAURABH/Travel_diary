@@ -124,10 +124,15 @@ engine requirement.
 values from the spec (5 categories, 10 interest tags, 3 traveller-fit tags)
 but editable without a deploy. Nothing in `src/features` or `src/app`
 hardcodes a category or tag name — they're always looked up by slug/id.
-`FestivalPopularity` (`POPULAR | HIDDEN | LOCAL_EMERGING`) stayed an enum
+`ContentPopularity` (`POPULAR | HIDDEN | LOCAL_EMERGING`) stayed an enum
 rather than a table: it's a small, structurally fixed classification the
 spec itself enumerates exhaustively, unlike categories/tags which are
-explicitly meant to grow.
+explicitly meant to grow. Originally `FestivalPopularity`/festival-only;
+renamed and extended to `Destination.popularity` in Phase 3 (migration
+`20260827202945_destination_popularity`) once the map's "Hidden Gems" layer
+needed the same classification for destinations, not just festivals — the
+enum values didn't change, so this was a rename-in-place, not a
+drop/recreate (see the migration SQL for how that's done safely).
 
 ## Polymorphic content references
 

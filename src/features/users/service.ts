@@ -51,6 +51,14 @@ export async function toggleSavedContent(userId: string, contentType: ContentTyp
   return { saved: true };
 }
 
+export async function isContentSaved(userId: string, contentType: ContentType, contentId: string) {
+  const existing = await db.savedContent.findUnique({
+    where: { userId_contentType_contentId: { userId, contentType, contentId } },
+    select: { id: true },
+  });
+  return existing != null;
+}
+
 export async function markVisited(userId: string, contentType: ContentType, contentId: string) {
   return db.visitedContent.upsert({
     where: { userId_contentType_contentId: { userId, contentType, contentId } },

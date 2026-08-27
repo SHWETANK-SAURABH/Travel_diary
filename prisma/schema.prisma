@@ -52,7 +52,9 @@ enum ContentStatus {
   ARCHIVED
 }
 
-enum FestivalPopularity {
+// Shared by Festival and Destination — the map's "Hidden Gems" layer (Phase
+// 3) filters on this across both content types, so it isn't festival-only.
+enum ContentPopularity {
   POPULAR
   HIDDEN
   LOCAL_EMERGING
@@ -139,6 +141,7 @@ enum AnalyticsEventType {
   SEARCH_QUERY
   SEARCH_ZERO_RESULT
   SAVE
+  ADD_TO_TRIP
   TRIP_CREATED
   RECOMMENDATION_CLICK
 }
@@ -321,7 +324,7 @@ model Festival {
   categoryId String
   category   FestivalCategory @relation(fields: [categoryId], references: [id])
 
-  popularity FestivalPopularity @default(LOCAL_EMERGING)
+  popularity ContentPopularity @default(LOCAL_EMERGING)
 
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
@@ -404,6 +407,8 @@ model Destination {
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
 
+  popularity ContentPopularity @default(LOCAL_EMERGING)
+
   latitude  Float?
   longitude Float?
   precision LocationPrecision                      @default(APPROXIMATE)
@@ -438,6 +443,7 @@ model Destination {
   @@index([locationId])
   @@index([latitude, longitude])
   @@index([budgetLevel])
+  @@index([popularity])
 }
 
 // ---------------------------------------------------------------------------

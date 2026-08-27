@@ -206,4 +206,201 @@ entry for the seed data's placeholder image host.
 
 ---
 
-<!-- Phase 3+ reports appended below as each phase completes. -->
+## Phase 3 — The Living India Map
+
+**Status: complete.**
+
+### Summary
+
+Built the first fully functional version of the interactive India map,
+replacing Phase 2's static shell with a real MapLibre GL canvas: India/state
+boundaries, clustered discovery markers (festivals/destinations/experiences/
+events), month + "All Year" filtering, five toggleable layers, map-specific
+search with fly-to, click-through state and discovery preview panels,
+Save/Add-to-Trip integration points, and URL-based map-state preservation.
+
+### 1. Map technology
+
+**MapLibre GL JS 6**, as selected in Phase 1. Basemap style:
+[OpenFreeMap](https://openfreemap.org)'s `positron` style — free, keyless,
+unlimited use, no billing/API-key setup required for local dev or
+production. Chosen over Mapbox/MapTiler specifically to avoid requiring the
+user to provision a paid account before the map works at all.
+
+### 2. Geographic data source/format
+
+India state/UT boundaries: Natural Earth's `ne_50m_admin_1_states_provinces`
+(admin-1 scale), filtered to India (36 features), renamed to modern
+names/slugs, and lightly simplified with `mapshaper` — 13.6MB → 17KB. Public
+domain, safe for commercial redistribution. Deliberately **not** the
+GADM-derived datasets most commonly linked as "India states GeoJSON" on
+GitHub — GADM's license prohibits commercial redistribution without
+permission, which doesn't fit a production app. Full provenance in
+`public/geo/SOURCE.md`.
+
+### 3. Viewport loading
+
+`GET /api/map/viewport` (bbox + optional month) is the only network call
+driven by panning/zooming, debounced 300ms after `moveend`. It returns a
+normalized, lightweight `MapDiscovery[]` (id/kind/name/coordinates/slug/
+popularity — no descriptions or images) regardless of source table
+(festivals, destinations, experiences, or events via their location).
+`src/features/map/service.ts` is the single call site; nothing outside it
+queries these tables for map purposes.
+
+### 4. Clustering
+
+MapLibre's native `cluster: true` GeoJSON source support — no
+`supercluster` or other clustering library. Cluster counts come directly
+from MapLibre's own aggregation of whatever's currently in the source, so
+they're always accurate by construction (never hand-computed/faked).
+Clicking a cluster calls `getClusterExpansionZoom()` and eases the camera in.
+
+### 5. Month filtering
+
+Festivals are matched against `FestivalOccurrence.startDate` for the
+selected month (current month selected by default); destinations/
+experiences/events aren't time-bound in the current schema so they're
+unaffected by the month filter. Switching months or toggling a layer
+re-filters the **already-fetched** discovery list client-side
+(`toFeatureCollection()` in `MapCanvas.tsx`) and calls `source.setData()` —
+no network request, and MapLibre's clustering re-runs correctly on the
+filtered point set since it operates on whatever's in the source at that
+moment.
+
+### 6. Layers
+
+Five toggles (Festivals/Destinations/Hidden Gems/Experiences/Food-Events),
+independent, not mutually exclusive — a hidden festival matches both
+"Festivals" and "Hidden Gems" simultaneously and renders once (dedup is
+inherent to filtering one array, not two). "Hidden Gems" needed a schema
+change: `Destination` didn't have a popularity/hidden classification
+(only `Festival` did). Added `ContentPopularity` (renamed from
+`FestivalPopularity`) to `Destination` — see `docs/database.md`.
+
+### 7. Map state preservation
+
+Center/zoom/month are written to the URL (`?lat=&lng=&zoom=&month=`) via
+plain `history.replaceState`, not `next/navigation`'s router (which would
+re-run an RSC fetch on every pan/zoom — UI-state bookkeeping shouldn't
+trigger that). Reading it back out on load required a real fix — see bug
+#2 below.
+
+### 8. Desktop/mobile interaction model
+
+Reuses Phase 2's `ResponsivePanel` unmodified: side panel on desktop,
+bottom sheet on mobile, for both the discovery preview panel and the state
+summary panel. `MapShell` (controls row + canvas + panel) is the same
+component added in Phase 2, now driven by real data instead of a skeleton
+placeholder.
+
+### 9. Save / Add to Trip / Explore
+
+- **Save**: `src/components/map/useSavedState.ts` — guests persist to
+  `localStorage` via the existing guest store (Phase 1), signed-in users
+  via `POST/GET /api/saved` (new). One hook, reusable by future
+  festival/destination detail-page Save buttons.
+- **Add to Trip**: an honest temporary interaction state (local component
+  state in `DiscoveryPreviewPanel`, resets on panel close) — the real trip
+  builder is out of scope for this phase per the spec; this is the
+  documented integration point for it.
+- **Explore**: real navigation to `/festivals/[slug]` or
+  `/destinations/[slug]` (both already exist from Phase 1) — not a
+  placeholder, since those pages are real.
+
+### Files created/modified
+
+New: `src/components/map/{MapCanvas,MapSearch,DiscoveryPreviewPanel,
+StatePanel,useSavedState}.tsx`, `src/app/api/map/{viewport,search,
+discovery,state/[slug]}/route.ts`, `src/app/api/saved/route.ts`,
+`src/app/api/analytics/track/route.ts`, `src/features/locations/service.ts`,
+`public/geo/india-states.geojson` (+ `SOURCE.md`), `public/maplibre/*`
+(worker fix, + `README.md`). Modified: `src/features/map/{types,
+service}.ts` (rewritten), `src/features/festivals/*`,
+`src/features/destinations/*` (added `stateSlug` filtering, `precision`,
+`popularity` on destinations), `src/app/map/MapPageClient.tsx` (rewritten),
+`prisma/schema.prisma` + 2 new migrations, `prisma/seed.ts` (destination
+popularity values), `eslint.config.mjs` (exclude vendored worker files).
+
+### Tests/checks performed
+
+- `npm run typecheck`, `npm run lint`, `npm run build` — all clean.
+- Real end-to-end verification via headless Chromium against the
+  **production build** (`next build && next start`, not just `next dev`):
+  map load, cluster click → zoom, marker click → discovery preview panel
+  (fetches real seed data, Save/Add to Trip/Explore all functional),
+  state-boundary click → state panel with real counts, map search →
+  fly-to, layer toggle, month switch, and — critically — **reload the page
+  and confirm center/zoom/month are restored exactly**, with zero browser
+  console errors throughout.
+
+### Two confirmed bugs found and fixed during this phase
+
+Both were invisible to `tsc`/`eslint`/`next build` and only surfaced by
+actually driving the built app in a browser:
+
+1. **Turbopack silently breaks MapLibre's Web Worker.** The map rendered
+   nothing at all — no error, no thrown exception, `load`/`idle` events
+   never fired, zero tile requests. Root cause: Next.js 16's default
+   bundler doesn't resolve maplibre-gl's internal tile-parsing worker
+   module correctly. Fixed by serving the worker (and its sibling chunk)
+   as static files from `public/maplibre/` and calling `setWorkerUrl()`
+   before constructing any `Map`. Documented in `public/maplibre/README.md`
+   with re-copy instructions for future `maplibre-gl` version bumps.
+2. **MapLibre's own stylesheet silently wins a CSS specificity fight.**
+   `maplibre-gl.css` sets `.maplibregl-map { position: relative }`, which
+   at equal specificity overrides a Tailwind `absolute` class applied to
+   the same element (whichever stylesheet loads later in the cascade
+   wins) — `inset-0` then does nothing (it only affects
+   absolute/fixed-positioned elements), and the map container collapses to
+   zero height. Fixed by sizing with `h-full w-full` against the
+   already-sized flex parent instead.
+3. (Not bundler/CSS — a genuine app bug, also fixed) **Hydration mismatch
+   on `month`.** Seeding `month` state from `readUrlState()` synchronously
+   during the initial render meant the server's render (no `window`, so
+   `month` defaults to the current month) and the client's first render
+   (real URL, e.g. `month=12`) disagreed — a classic Next.js hydration
+   mismatch. The `MonthSelector` UI would silently stick on the server's
+   default value after a reload despite React state and the URL both
+   correctly holding the right month. Fixed with the standard pattern:
+   `month` always starts at the server-safe default and is corrected once,
+   client-side, in a `useEffect` after mount.
+4. (Also fixed while auditing the above) **Stale closures in
+   `MapCanvas`'s mount-once event handlers** — `onViewportChange`/
+   `onDiscoverySelect`/`onStateSelect`/`onZoom` were captured once at
+   mount and would silently go stale if the parent passed new closures on
+   re-render (e.g. `onViewportChange`, memoized on `[month]`, could still
+   fire with a stale `month` after the user changed months and then
+   panned). Fixed with the standard ref-mirror pattern: refs kept current
+   every render, dereferenced inside the mount-once handlers instead of
+   closing over the props directly.
+
+### Performance considerations
+
+- Viewport queries are capped (`take: 500` per content type) and scoped to
+  the bbox — never all-of-India in one response.
+- Layer/month changes never hit the network — only bbox changes do,
+  debounced.
+- The India boundary file is 17KB; fetched once, cached by the browser for
+  the session.
+- Not yet load-tested against "thousands of festivals/destinations" per
+  the spec's stated design target — current seed data is small (7
+  festivals, 5 destinations). The architecture (bbox-scoped queries,
+  native clustering, capped per-type limits) should hold, but this is
+  unverified at scale.
+
+### Known gaps / follow-ups
+
+- Experiences/events aren't month-filtered (schema has no time dimension
+  for them) — only festivals respond to the month selector.
+- `Food` items have no coordinates in the schema (only a region name +
+  optional city `Location`), so standalone food content never appears on
+  the map — only `Event` records (which do have a location) populate the
+  "Food / Events" layer. Noted as a schema gap, not fixed this phase.
+- "Add to Trip" is intentionally not persisted (see above) — resets on
+  panel close/reload. The real trip builder is a later phase.
+- No automated tests — consistent with the gap noted in Phases 1–2.
+
+---
+
+<!-- Phase 4+ reports appended below as each phase completes. -->

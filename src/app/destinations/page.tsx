@@ -9,8 +9,13 @@ export const metadata: Metadata = {
   description: "Browse India's destinations — famous and hidden, by budget and by state.",
 };
 
-export default async function DestinationsPage() {
-  const destinations = await listPublishedDestinations();
+interface PageProps {
+  searchParams: Promise<{ state?: string }>;
+}
+
+export default async function DestinationsPage({ searchParams }: PageProps) {
+  const { state } = await searchParams;
+  const destinations = await listPublishedDestinations({ stateSlug: state });
 
   return (
     <Container className="py-12">
@@ -25,7 +30,11 @@ export default async function DestinationsPage() {
         <EmptyState
           className="mt-8"
           title="No destinations published yet"
-          description="This list fills in as seed/CMS content is added."
+          description={
+            state
+              ? "No destinations in this state yet — try clearing the filter."
+              : "This list fills in as seed/CMS content is added."
+          }
         />
       ) : (
         <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -35,7 +44,8 @@ export default async function DestinationsPage() {
                 <CardHeader>
                   <CardTitle>{destination.name}</CardTitle>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="flex flex-wrap gap-2">
+                  {destination.popularity === "HIDDEN" && <Badge variant="terracotta">hidden gem</Badge>}
                   {destination.budgetLevel && (
                     <Badge variant="neutral">{destination.budgetLevel.replace("_", " ").toLowerCase()}</Badge>
                   )}
