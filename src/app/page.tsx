@@ -15,7 +15,7 @@ export default function HomePage() {
         <p className="text-sm font-medium tracking-wide text-marigold-600 uppercase">
           {siteConfig.tagline}
         </p>
-        <h1 className="mt-3 font-display text-4xl leading-tight sm:text-5xl">
+        <h1 className="mt-3 font-display text-display leading-tight sm:text-5xl">
           Discover India, one festival, one destination, one story at a time.
         </h1>
         <p className="mt-4 text-lg text-ink-muted">{siteConfig.description}</p>

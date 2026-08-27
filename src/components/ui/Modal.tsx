@@ -40,7 +40,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
         className
       )}
     >
-      {title && <h2 className="border-b border-border p-5 font-display text-lg">{title}</h2>}
+      {title && <h2 className="border-b border-border p-5 font-display text-h3">{title}</h2>}
       <div className="p-5">{children}</div>
     </dialog>
   );

@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { listPublishedFestivals } from "@/features/festivals/service";
 import { Container } from "@/components/layout";
-import { Card, CardHeader, CardTitle, CardContent, Badge } from "@/components/ui";
+import { Card, CardHeader, CardTitle, CardContent, Badge, EmptyState } from "@/components/ui";
 
 export const metadata: Metadata = {
   title: "Festivals",
@@ -14,28 +14,36 @@ export default async function FestivalsPage() {
 
   return (
     <Container className="py-12">
-      <h1 className="font-display text-3xl">Festivals</h1>
-      <p className="mt-2 text-ink-muted">
-        {festivals.length === 0
-          ? "No festivals published yet — this list fills in as seed/CMS content is added."
-          : `${festivals.length} festival${festivals.length === 1 ? "" : "s"}`}
-      </p>
+      <h1 className="text-h1 font-display">Festivals</h1>
+      {festivals.length > 0 && (
+        <p className="mt-2 text-body text-ink-muted">
+          {festivals.length} festival{festivals.length === 1 ? "" : "s"}
+        </p>
+      )}
 
-      <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {festivals.map((festival) => (
-          <Link key={festival.id} href={`/festivals/${festival.slug}`}>
-            <Card className="h-full transition-shadow hover:shadow-panel">
-              <CardHeader>
-                <Badge variant="marigold">{festival.category.name}</Badge>
-                <CardTitle className="mt-2">{festival.name}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Badge variant="neutral">{festival.popularity.replace("_", " ").toLowerCase()}</Badge>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </div>
+      {festivals.length === 0 ? (
+        <EmptyState
+          className="mt-8"
+          title="No festivals published yet"
+          description="This list fills in as seed/CMS content is added."
+        />
+      ) : (
+        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {festivals.map((festival) => (
+            <Link key={festival.id} href={`/festivals/${festival.slug}`}>
+              <Card className="h-full transition-shadow duration-base hover:shadow-panel">
+                <CardHeader>
+                  <Badge variant="marigold">{festival.category.name}</Badge>
+                  <CardTitle className="mt-2">{festival.name}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Badge variant="neutral">{festival.popularity.replace("_", " ").toLowerCase()}</Badge>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      )}
     </Container>
   );
 }

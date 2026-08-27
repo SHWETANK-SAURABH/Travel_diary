@@ -92,4 +92,118 @@ destination pages, trip planner, CMS), per the phase's explicit scope.
 
 ---
 
-<!-- Phase 2+ reports appended below as each phase completes. -->
+## Phase 2 — Design System & Application Shell
+
+**Status: complete.**
+
+### Summary
+
+Built out the full design-system component library and application shell
+on top of Phase 1's foundation (tokens, Button/Input/Badge/Card/Skeleton/
+Modal/ResponsivePanel/Header/Footer already existed) — no map, no festival/
+destination UI beyond what already existed, no CMS, per the phase's scope.
+
+### Design-system components added
+
+- **Typography**: a real scale (`text-display`/`h1`/`h2`/`h3`/`body`/
+  `caption`/`label`) as Tailwind theme tokens, applied consistently across
+  every page's headings (replacing ad hoc `text-3xl`/`text-4xl`).
+- **Color**: added `warning`/`info` semantic tokens alongside the existing
+  `success`/`danger`; kept the palette restrained (7 accent/semantic colors
+  total).
+- **Motion**: `duration-fast`/`duration-base`, `ease-standard`, and three
+  keyframe-based animation utilities (`animate-fade-in`/`slide-up`/
+  `scale-in`), plus a global `prefers-reduced-motion` override — one rule
+  instead of threading a check through every animated component.
+- **Buttons**: added `destructive` and `text` variants, an `icon` size, and
+  a `loading` state (spinner + auto-disable).
+- **Cards**: `variant` prop (`discovery`/`feature`/`compact`/
+  `recommendation`/`mapPreview`).
+- **New primitives**: `Pill` (interactive filter chip, distinct from the
+  static `Badge`), `Tabs`, `Dropdown` (hand-rolled, no menu library),
+  `Tooltip`, `ResponsiveImage` (aspect-ratio box + skeleton + error
+  fallback, wraps `next/image`), `EmptyState`, `ErrorState`, `SkeletonCard`,
+  `SearchInput`/`SearchOverlay`/`SearchResultGroup` (search UI foundation —
+  no search engine wiring beyond what Phase 1 already built).
+
+### Navigation & shell
+
+- **Header**: rewritten as a scroll-aware client component (`transparentUntilScroll`
+  prop, unused by any page yet but ready for a future hero page), with a
+  minimal top-level nav (Explore▾, Map, Trips) per the phase's "keep it
+  minimal" guidance — Festivals/Destinations/Hidden India/Calendar moved
+  into the Explore dropdown instead of sitting as separate top-level links.
+- **ExploreMenu**: dropdown (desktop) / bottom-sheet (mobile) content,
+  sourced from one `exploreNav` config array — Food/Experiences/Seasonal
+  Travel shown as "Soon" since they're not routes yet, per "design it so
+  additional categories can be added later."
+- **MobileNav**: fixed bottom nav (Home/Map/Trips/Profile + Explore, which
+  opens the discovery bottom sheet rather than navigating directly, per the
+  spec). Root layout adds `pb-16 md:pb-0` so content never sits under it.
+- **AccountMenu**: session-aware — "Sign in" link when signed out, avatar
+  dropdown (Profile/Trips/Admin-if-admin/Sign out) when signed in.
+- **HeaderSearch**: opens the `SearchOverlay` foundation; submitting routes
+  to the real `/search` page (which already executes a real query from
+  Phase 1) — the overlay itself doesn't run queries.
+- **Footer**: expanded to Explore/Plan/About sections.
+- **Container primitives**: added `WideSection`, `FullBleed`,
+  `FullScreenSection` alongside the existing `Container`.
+- **Map-ready shell**: `MapShell` (controls row + canvas area +
+  `ResponsivePanel`), `MonthSelector`, `LayerControls` — presentational
+  only, wired into a real (interactive, stateful) `/map` page with a
+  skeleton canvas placeholder. Current month is correctly pre-selected.
+- **Route loading/error boundaries**: global `loading.tsx`/`error.tsx`/
+  `not-found.tsx`, plus `loading.tsx` skeleton grids for `/festivals` and
+  `/destinations` (the two routes that actually fetch data today).
+
+### Design decisions
+
+- Typography/color/radius/shadow/motion tokens all live in `globals.css`'s
+  `@theme inline` block so they generate canonical Tailwind utilities
+  (`text-h1`, `bg-marigold-500`, `duration-fast`, ...) — no arbitrary
+  `var(--...)` syntax in component code (fixed several instances of this
+  from Phase 1 during this phase).
+- No dropdown/tooltip/menu library — hand-rolled with `useState` + a
+  pointerdown/Escape listener, per the "avoid unnecessary dependencies"
+  performance guidance. `Modal`/`SearchOverlay` use the native `<dialog>`
+  element for the same reason (free focus trap + ESC handling).
+- Dark mode: not implemented, per explicit instruction not to unless
+  already present.
+
+### Files changed
+
+Renamed `src/middleware.ts` → `src/proxy.ts` (Next.js 16 deprecated the
+`middleware` convention during this phase — same code, new filename).
+~30 new component/route files under `src/components/ui`,
+`src/components/layout`, `src/components/map`, `src/app`; `globals.css`
+and `layout.tsx` updated; `next.config.ts` gained an `images.remotePatterns`
+entry for the seed data's placeholder image host.
+
+### Checks performed
+
+- `npm run typecheck`, `npm run lint`, `npm run build` — all clean.
+- Visual verification via a headless-Chromium script (Playwright) against
+  both the dev server and a production build (`next build && next start`):
+  screenshotted `/`, `/festivals`, `/festivals/hornbill-festival`, `/map`,
+  `/search?q=fest` at 1440×900 and 390×844, plus the Explore dropdown
+  (desktop) and Explore bottom sheet (mobile) open. Zero browser console
+  errors on any page. (First pass against the dev server showed the
+  Explore bottom-sheet tap hitting Next's dev-mode indicator badge, which
+  overlaps that screen corner in dev only — confirmed non-issue against
+  the production build.)
+
+### Known gaps / follow-ups
+
+- `HeaderSearch`'s overlay and the `/search` page still run two separate
+  code paths for the same query (the overlay doesn't show live
+  suggestions) — acceptable per "do not build the complete search engine
+  yet," but worth unifying once search grows a suggestions API.
+- `ResponsiveImage` isn't used anywhere yet (no page renders content images
+  yet beyond what `next/image` would need); it'll get its first real
+  exercise once festival/destination cards grow hero images.
+- No automated component tests — same gap noted in the Phase 1 report,
+  still no test runner configured.
+
+---
+
+<!-- Phase 3+ reports appended below as each phase completes. -->

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Inter } from "next/font/google";
 import { siteConfig } from "@/config/site";
-import { Header, Footer } from "@/components/layout";
+import { Header, Footer, MobileNav } from "@/components/layout";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -31,8 +31,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col bg-paper text-ink">
         <Providers>
           <Header />
-          <main className="flex-1">{children}</main>
+          <main className="flex-1 pb-16 md:pb-0">{children}</main>
           <Footer />
+          <MobileNav />
         </Providers>
       </body>
     </html>

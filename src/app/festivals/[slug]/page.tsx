@@ -43,7 +43,7 @@ export default async function FestivalDetailPage({ params }: PageProps) {
         <Badge variant="marigold">{festival.category.name}</Badge>
         <Badge variant="neutral">{festival.popularity.replace("_", " ").toLowerCase()}</Badge>
       </div>
-      <h1 className="mt-3 font-display text-4xl">{festival.name}</h1>
+      <h1 className="mt-3 font-display text-display">{festival.name}</h1>
       <p className="mt-2 text-ink-muted">{festival.location.name}</p>
 
       {nextOccurrence && (

@@ -13,7 +13,7 @@ export default async function SignInPage({ searchParams }: PageProps) {
 
   return (
     <Container className="py-24">
-      <h1 className="font-display text-3xl">Sign in</h1>
+      <h1 className="font-display text-h1">Sign in</h1>
       <p className="mt-2 max-w-sm text-ink-muted">
         Optional — browsing, saving and trip planning all work without an account. Sign in to sync
         saves and trips across devices.

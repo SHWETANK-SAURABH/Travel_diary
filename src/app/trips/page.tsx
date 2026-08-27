@@ -3,7 +3,7 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { listTrips } from "@/features/trips/service";
 import { Container } from "@/components/layout";
-import { Card, CardHeader, CardTitle, Button } from "@/components/ui";
+import { Card, CardHeader, CardTitle, Button, EmptyState } from "@/components/ui";
 
 export const metadata: Metadata = {
   title: "Trips",
@@ -16,7 +16,7 @@ export default async function TripsPage() {
   if (!session) {
     return (
       <Container className="py-24">
-        <h1 className="font-display text-3xl">Trips</h1>
+        <h1 className="font-display text-h1">Trips</h1>
         <p className="mt-3 max-w-xl text-ink-muted">
           Trips can already be planned as a guest — saved locally on this device (see
           src/lib/guest) — and synced to an account once you sign in. The trip builder UI is a
@@ -33,9 +33,18 @@ export default async function TripsPage() {
 
   return (
     <Container className="py-12">
-      <h1 className="font-display text-3xl">Your trips</h1>
+      <h1 className="text-h1 font-display">Your trips</h1>
       {trips.length === 0 ? (
-        <p className="mt-3 text-ink-muted">No trips yet.</p>
+        <EmptyState
+          className="mt-8"
+          title="No trips yet"
+          description="Start building your first trip — save festivals and destinations as you explore."
+          action={
+            <Link href="/explore">
+              <Button variant="outline">Start exploring</Button>
+            </Link>
+          }
+        />
       ) : (
         <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {trips.map((trip) => (

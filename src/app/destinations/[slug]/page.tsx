@@ -43,7 +43,7 @@ export default async function DestinationDetailPage({ params }: PageProps) {
   return (
     <Container className="py-12">
       {destination.budgetLevel && <Badge variant="marigold">{destination.budgetLevel.replace("_", " ").toLowerCase()}</Badge>}
-      <h1 className="mt-3 font-display text-4xl">{destination.name}</h1>
+      <h1 className="mt-3 font-display text-display">{destination.name}</h1>
       <p className="mt-2 text-ink-muted">{destination.location.name}</p>
 
       {destination.bestTimeStartMonth != null && destination.bestTimeEndMonth != null && (

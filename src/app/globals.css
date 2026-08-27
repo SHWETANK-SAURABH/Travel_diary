@@ -7,6 +7,16 @@
  * Deliberately NOT a SaaS-dashboard palette — warm paper background instead
  * of stark white/grey, a marigold accent instead of "brand blue", a serif
  * display face for editorial weight on headings.
+ *
+ * Breakpoints and the base spacing scale deliberately use Tailwind's
+ * defaults rather than reinventing them — they're already token-driven
+ * (--breakpoint-*, the 0.25rem spacing step) and match what every utility
+ * class in this codebase already assumes.
+ *
+ * z-index convention (plain numeric Tailwind utilities, not a custom
+ * token — keep in sync if it grows): z-10 dropdown/tooltip, z-30 sticky
+ * header, z-40 panel/bottom-sheet backdrop, z-50 panel/bottom-sheet,
+ * modals use the native <dialog> top-layer instead of a z-index at all.
  * ------------------------------------------------------------------------- */
 
 :root {
@@ -17,7 +27,7 @@
   --color-ink-muted: #6b6355;
   --color-border: #e6ddc9;
 
-  /* Accents — marigold (primary), deep indigo (secondary), terracotta (tertiary) */
+  /* Accents — marigold (primary), deep indigo (secondary), terracotta (tertiary/festival accent) */
   --color-marigold-50: #fdf3e6;
   --color-marigold-400: #e8922f;
   --color-marigold-500: #d97a1a;
@@ -28,8 +38,11 @@
 
   --color-terracotta-500: #bd5230;
 
+  /* Semantic */
   --color-success: #2f6b4f;
+  --color-warning: #a15c00;
   --color-danger: #b3261e;
+  --color-info: #2a5b8a;
 
   /* Radii — modest, editorial. Never pill-shaped by default. */
   --radius-sm: 0.25rem;
@@ -39,6 +52,11 @@
   /* Shadows — soft and grounded, no glassmorphism/glow */
   --shadow-card: 0 1px 2px rgba(33, 29, 23, 0.06), 0 4px 16px rgba(33, 29, 23, 0.06);
   --shadow-panel: 0 8px 30px rgba(33, 29, 23, 0.12);
+
+  /* Motion — fast and purposeful, per the animation-system guidance */
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
 @theme inline {
@@ -59,7 +77,9 @@
   --color-terracotta-500: var(--color-terracotta-500);
 
   --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
   --color-danger: var(--color-danger);
+  --color-info: var(--color-info);
 
   --font-display: var(--font-display-raw), Georgia, serif;
   --font-sans: var(--font-sans-raw), system-ui, sans-serif;
@@ -70,6 +90,75 @@
 
   --shadow-card: var(--shadow-card);
   --shadow-panel: var(--shadow-panel);
+
+  --duration-fast: var(--duration-fast);
+  --duration-base: var(--duration-base);
+  --ease-standard: var(--ease-standard);
+
+  /* Typography scale — display/h1/h2/h3/body/caption/label, per the Phase 2
+     hierarchy. Responsive up-sizing (e.g. display on desktop) is applied at
+     the component/usage site with sm:/lg: prefixes, not baked in here. */
+  --text-display: 2.5rem;
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.02em;
+
+  --text-h1: 2rem;
+  --text-h1--line-height: 1.15;
+  --text-h1--letter-spacing: -0.01em;
+
+  --text-h2: 1.5rem;
+  --text-h2--line-height: 1.25;
+
+  --text-h3: 1.125rem;
+  --text-h3--line-height: 1.35;
+
+  --text-body: 1rem;
+  --text-body--line-height: 1.6;
+
+  --text-caption: 0.875rem;
+  --text-caption--line-height: 1.5;
+
+  --text-label: 0.75rem;
+  --text-label--line-height: 1.4;
+  --text-label--letter-spacing: 0.03em;
+
+  /* Animation primitives — fade/slide/scale, used by Modal, ResponsivePanel,
+     Dropdown and Tooltip. Kept to plain CSS (no animation library). */
+  --animate-fade-in: fade-in var(--duration-base) var(--ease-standard);
+  --animate-slide-up: slide-up var(--duration-base) var(--ease-standard);
+  --animate-scale-in: scale-in var(--duration-fast) var(--ease-standard);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes slide-up {
+  from {
+    transform: translateY(100%);
+  }
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(2px);
+  }
+}
+
+/* Respect the user's motion preference everywhere at once, rather than
+   threading a check through every animated component. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 body {

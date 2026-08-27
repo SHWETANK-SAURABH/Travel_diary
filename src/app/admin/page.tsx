@@ -14,7 +14,7 @@ export default async function AdminPage() {
 
   return (
     <Container className="py-12">
-      <h1 className="font-display text-3xl">Admin</h1>
+      <h1 className="font-display text-h1">Admin</h1>
       <p className="mt-2 text-ink-muted">
         Signed in as {session?.user.email}. The festival/destination/event/food/experience CMS,
         verification workflow and featured-content controls are Phase 2+ — see

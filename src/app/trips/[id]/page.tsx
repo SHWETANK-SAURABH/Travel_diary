@@ -20,7 +20,7 @@ export default async function TripDetailPage({ params }: PageProps) {
 
   return (
     <Container className="py-12">
-      <h1 className="font-display text-3xl">{trip.name}</h1>
+      <h1 className="font-display text-h1">{trip.name}</h1>
       <p className="mt-2 text-ink-muted">
         {trip.items.length} item{trip.items.length === 1 ? "" : "s"} · Day-by-day itinerary editor
         lands in a later phase.

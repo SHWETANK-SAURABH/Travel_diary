@@ -13,7 +13,7 @@ export default async function ProfilePage() {
   if (!session) {
     return (
       <Container className="py-24">
-        <h1 className="font-display text-3xl">Profile</h1>
+        <h1 className="font-display text-h1">Profile</h1>
         <p className="mt-3 max-w-xl text-ink-muted">Sign in to view and manage your preferences.</p>
         <Link href="/auth/sign-in?callbackUrl=/profile">
           <Button className="mt-6">Sign in</Button>
@@ -26,7 +26,7 @@ export default async function ProfilePage() {
 
   return (
     <Container className="py-12">
-      <h1 className="font-display text-3xl">{session.user.name ?? session.user.email}</h1>
+      <h1 className="font-display text-h1">{session.user.name ?? session.user.email}</h1>
       <p className="mt-2 text-ink-muted">
         {preference
           ? "Preferences saved. The preferences editor UI lands in a later phase."
