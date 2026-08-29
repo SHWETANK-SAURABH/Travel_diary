@@ -2,24 +2,17 @@
 
 import { useSession } from "next-auth/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ContentType } from "@prisma/client";
 import { useGuestStore } from "@/lib/guest/store";
 import { trackClientEvent } from "@/lib/analytics/client";
-
-const KIND_TO_CONTENT_TYPE: Record<"festival" | "destination" | "experience" | "event", ContentType> = {
-  festival: "FESTIVAL",
-  destination: "DESTINATION",
-  experience: "EXPERIENCE",
-  event: "EVENT",
-};
+import { KIND_TO_CONTENT_TYPE, type DiscoveryKind } from "./contentKind";
 
 /**
  * Save/unsave for one piece of content — guests persist to localStorage
  * (src/lib/guest/store.ts), signed-in users persist via /api/saved. One
- * hook, one call site, so every "Save" button (map today; festival/
- * destination detail pages later) behaves identically.
+ * hook, one call site, so every "Save" button (the map's discovery panel,
+ * festival/destination detail pages) behaves identically.
  */
-export function useSavedState(kind: keyof typeof KIND_TO_CONTENT_TYPE, id: string) {
+export function useSavedState(kind: DiscoveryKind, id: string) {
   const { data: session } = useSession();
   const contentType = KIND_TO_CONTENT_TYPE[kind];
   const queryClient = useQueryClient();

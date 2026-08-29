@@ -59,12 +59,27 @@ export async function isContentSaved(userId: string, contentType: ContentType, c
   return existing != null;
 }
 
-export async function markVisited(userId: string, contentType: ContentType, contentId: string) {
-  return db.visitedContent.upsert({
+/** V1 "visited" is a simple toggle — no dates, notes, or photos, per the product spec. */
+export async function toggleVisitedContent(userId: string, contentType: ContentType, contentId: string) {
+  const existing = await db.visitedContent.findUnique({
     where: { userId_contentType_contentId: { userId, contentType, contentId } },
-    create: { userId, contentType, contentId },
-    update: {},
   });
+
+  if (existing) {
+    await db.visitedContent.delete({ where: { id: existing.id } });
+    return { visited: false };
+  }
+
+  await db.visitedContent.create({ data: { userId, contentType, contentId } });
+  return { visited: true };
+}
+
+export async function isContentVisited(userId: string, contentType: ContentType, contentId: string) {
+  const existing = await db.visitedContent.findUnique({
+    where: { userId_contentType_contentId: { userId, contentType, contentId } },
+    select: { id: true },
+  });
+  return existing != null;
 }
 
 /** Thin re-export so callers only ever import user-account operations from src/features/users. */

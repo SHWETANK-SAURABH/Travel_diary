@@ -30,3 +30,11 @@ export interface FestivalListFilters {
   page?: number;
   pageSize?: number;
 }
+
+export interface FestivalDiscoveryFilters {
+  categorySlug?: string;
+  popularity?: Festival["popularity"];
+  stateSlug?: string;
+  /** 1-12 — used as a ranking signal (and by the "Browse by Month" UI filter), not a hard query filter. */
+  month?: number | null;
+}

@@ -109,6 +109,24 @@ to verified — see `verifyFestivalOccurrence()` in
 occurrences are stored but nothing in Phase 1 builds a public archive UI
 over them, per the spec.
 
+## Editorial featuring and transport/accommodation guidance (Phase 4)
+
+`Festival.featured: Boolean` — a manual admin flag distinct from
+`popularity` (which describes the festival itself, not "should we promote
+it right now"). Backs the ranking heuristic in
+`src/features/festivals/ranking.ts`; the spec names "editorial featuring"
+as a ranking signal in three separate phases, and there was no field for
+it before this one.
+
+`Location.{nearestAirport, nearestRailwayStation, roadAccessNotes,
+localTransportNotes, accommodationNotes}` — all optional, kept at
+city/region `Location` level rather than duplicated per festival or
+destination, since everything in the same city shares the same airport,
+station and hotel guidance. Sections built on these fields
+(`/festivals/[slug]`'s "How to Reach"/"Where to Stay") hide themselves
+entirely when the fields are empty, per the spec's "do not display an
+empty section."
+
 ## Destination best-time
 
 `bestTimeStartMonth`/`bestTimeEndMonth` (+ `altTime*` for a secondary

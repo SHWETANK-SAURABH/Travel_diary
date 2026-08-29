@@ -1,12 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Bookmark, BookmarkCheck, Plus, Check } from "lucide-react";
 import { Badge, Button, Skeleton } from "@/components/ui";
+import { SaveButton, AddToTripButton } from "@/components/discovery";
 import { trackClientEvent } from "@/lib/analytics/client";
-import { useSavedState } from "./useSavedState";
 import type { DiscoveryPreview } from "@/app/api/map/discovery/route";
 
 export interface SelectedDiscovery {
@@ -30,12 +28,6 @@ export function DiscoveryPreviewPanel({ selected }: { selected: SelectedDiscover
       return res.json();
     },
   });
-
-  const { saved, toggle: toggleSave } = useSavedState(selected.kind, selected.id);
-
-  // "Add to Trip" is a temporary interaction state per the Phase 3 spec —
-  // the real trip builder (persisting TripItem rows) is a later phase.
-  const [addedToTrip, setAddedToTrip] = useState(false);
 
   if (isLoading || !data) {
     return (
@@ -74,21 +66,8 @@ export function DiscoveryPreviewPanel({ selected }: { selected: SelectedDiscover
       )}
 
       <div className="mt-5 flex flex-wrap gap-2">
-        <Button size="sm" variant={saved ? "secondary" : "outline"} onClick={toggleSave}>
-          {saved ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}
-          {saved ? "Saved" : "Save"}
-        </Button>
-        <Button
-          size="sm"
-          variant={addedToTrip ? "secondary" : "outline"}
-          onClick={() => {
-            setAddedToTrip((v) => !v);
-            trackClientEvent({ type: "ADD_TO_TRIP", contentId: selected.id });
-          }}
-        >
-          {addedToTrip ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
-          {addedToTrip ? "Added" : "Add to Trip"}
-        </Button>
+        <SaveButton kind={selected.kind} id={selected.id} size="sm" />
+        <AddToTripButton id={selected.id} size="sm" />
         {exploreHref && (
           <Link
             href={exploreHref}

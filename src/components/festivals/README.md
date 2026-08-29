@@ -1,7 +1,17 @@
 # components/festivals
 
-Reserved for festival listing/detail UI (Phase 2+): cards, category filters,
-the year-occurrence date badge (confirmed / expected / not announced), and
-the `/festivals` and `/festivals/[slug]` page bodies.
+Festival listing/detail UI (Phase 4). Presentational — data comes from
+`src/features/festivals` (the discovery feed, ranking, and status/countdown
+helpers). Shared cross-content actions (Save/Visited/Add to Trip/Share)
+live in `src/components/discovery` instead of being duplicated here.
 
-Data comes from `src/features/festivals`. Built on `src/components/ui`.
+- `FestivalCard` — the lightweight discovery card.
+- `FestivalStatusBadge`, `Countdown` — date/status display, shared by the
+  card and the detail page's hero.
+- `FestivalGallery` — compact grid + lightbox `Modal`.
+- `NearbyDiscovery` — geographic "also explore nearby" grid.
+- `FestivalMonthFilter` — server-rendered "Browse by Month" links (no
+  client JS — real, bookmarkable per-month URLs).
+
+See `src/app/festivals/page.tsx` and `src/app/festivals/[slug]/page.tsx`
+for how these compose.

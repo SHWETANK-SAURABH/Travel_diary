@@ -18,3 +18,4 @@ export * from "./ErrorState";
 export * from "./SearchInput";
 export * from "./SearchOverlay";
 export * from "./SearchResultGroup";
+export * from "./Disclosure";

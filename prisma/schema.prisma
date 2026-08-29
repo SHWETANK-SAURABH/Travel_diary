@@ -262,6 +262,17 @@ model Location {
   // map's viewport queries. Populated/queried via raw SQL — see src/lib/geo.
   geo       Unsupported("geography(Geometry, 4326)")?
 
+  // Practical travel info, kept at city/region level (not duplicated per
+  // festival/destination) since everything in the same city shares it —
+  // see docs/database.md, "Transport & accommodation guidance". All
+  // optional: sections built on these fields hide themselves when absent
+  // rather than rendering empty, per the Phase 4 "data completeness" spec.
+  nearestAirport        String?
+  nearestRailwayStation String?
+  roadAccessNotes       String? @db.Text
+  localTransportNotes   String? @db.Text
+  accommodationNotes    String? @db.Text
+
   isSeed Boolean @default(false)
 
   createdAt DateTime @default(now())
@@ -325,6 +336,11 @@ model Festival {
   category   FestivalCategory @relation(fields: [categoryId], references: [id])
 
   popularity ContentPopularity @default(LOCAL_EMERGING)
+  // Editorial ranking signal called out explicitly in the ranking spec
+  // (Phase 3 map relevance, Phase 4/5 discovery ranking) — a manual admin
+  // flag, distinct from `popularity` (which describes the festival itself,
+  // not "should we promote it right now").
+  featured   Boolean           @default(false)
 
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
@@ -359,6 +375,7 @@ model Festival {
 
   @@index([status])
   @@index([popularity])
+  @@index([featured])
   @@index([locationId])
   @@index([categoryId])
   @@index([latitude, longitude])

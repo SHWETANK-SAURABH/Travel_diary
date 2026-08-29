@@ -19,10 +19,23 @@ async function upsertLocation(input: {
   parentSlug?: string;
   latitude?: number;
   longitude?: number;
+  nearestAirport?: string;
+  nearestRailwayStation?: string;
+  roadAccessNotes?: string;
+  localTransportNotes?: string;
+  accommodationNotes?: string;
 }) {
   const parent = input.parentSlug
     ? await db.location.findUniqueOrThrow({ where: { slug: input.parentSlug } })
     : null;
+
+  const travelFields = {
+    nearestAirport: input.nearestAirport,
+    nearestRailwayStation: input.nearestRailwayStation,
+    roadAccessNotes: input.roadAccessNotes,
+    localTransportNotes: input.localTransportNotes,
+    accommodationNotes: input.accommodationNotes,
+  };
 
   return db.location.upsert({
     where: { slug: input.slug },
@@ -35,8 +48,11 @@ async function upsertLocation(input: {
       longitude: input.longitude,
       precision: input.latitude != null ? "EXACT" : "APPROXIMATE",
       isSeed: true,
+      ...travelFields,
     },
-    update: {},
+    // Re-running the seed should backfill travel guidance onto
+    // already-created rows too, not just set it once on first insert.
+    update: travelFields,
   });
 }
 
@@ -62,12 +78,51 @@ async function main() {
   }
 
   const cities = [
-    { slug: "kohima", name: "Kohima", parentSlug: "nagaland", latitude: 25.6751, longitude: 94.1086 },
-    { slug: "jaisalmer", name: "Jaisalmer", parentSlug: "rajasthan", latitude: 26.9157, longitude: 70.9083 },
-    { slug: "pushkar", name: "Pushkar", parentSlug: "rajasthan", latitude: 26.4899, longitude: 74.5511 },
+    {
+      slug: "kohima",
+      name: "Kohima",
+      parentSlug: "nagaland",
+      latitude: 25.6751,
+      longitude: 94.1086,
+      nearestAirport: "Dimapur Airport (DMU), ~74 km",
+      nearestRailwayStation: "Dimapur Railway Station, ~74 km",
+      roadAccessNotes: "NH29 connects Dimapur to Kohima — allow 3 hours by road, more during the festival when traffic is heavy.",
+      localTransportNotes: "Shared sumos run from Dimapur; taxis are the practical option within Kohima itself.",
+      accommodationNotes: "Book well ahead for early December — Kohima's hotels fill up fast during the festival. Kisama village itself has limited stays.",
+    },
+    {
+      slug: "jaisalmer",
+      name: "Jaisalmer",
+      parentSlug: "rajasthan",
+      latitude: 26.9157,
+      longitude: 70.9083,
+      nearestAirport: "Jaisalmer Airport (JSA)",
+      nearestRailwayStation: "Jaisalmer Railway Station",
+      roadAccessNotes: "Well connected by NH11 from Jodhpur (~285 km, ~5 hours).",
+      accommodationNotes: "Heritage havelis inside the fort walls are atmospheric but tightly regulated for conservation reasons — many guesthouses outside the fort offer better value.",
+    },
+    {
+      slug: "pushkar",
+      name: "Pushkar",
+      parentSlug: "rajasthan",
+      latitude: 26.4899,
+      longitude: 74.5511,
+      nearestAirport: "Kishangarh Airport (KQH), ~27 km",
+      nearestRailwayStation: "Ajmer Railway Station, ~15 km",
+      roadAccessNotes: "A short, well-paved drive from Ajmer over the Aravalli pass.",
+    },
     { slug: "panaji", name: "Panaji", parentSlug: "goa", latitude: 15.4909, longitude: 73.8278 },
     { slug: "kochi", name: "Kochi", parentSlug: "kerala", latitude: 9.9312, longitude: 76.2673 },
-    { slug: "alleppey", name: "Alleppey", parentSlug: "kerala", latitude: 9.4981, longitude: 76.3388 },
+    {
+      slug: "alleppey",
+      name: "Alleppey",
+      parentSlug: "kerala",
+      latitude: 9.4981,
+      longitude: 76.3388,
+      nearestAirport: "Cochin International Airport (COK), ~85 km",
+      nearestRailwayStation: "Alappuzha Railway Station",
+      accommodationNotes: "Most visitors stay a night aboard a houseboat rather than in a hotel — book the houseboat itself as your accommodation.",
+    },
     { slug: "kolkata", name: "Kolkata", parentSlug: "west-bengal", latitude: 22.5726, longitude: 88.3639 },
     { slug: "ziro-valley", name: "Ziro Valley", parentSlug: "arunachal-pradesh", latitude: 27.5486, longitude: 93.8259 },
     { slug: "madurai", name: "Madurai", parentSlug: "tamil-nadu", latitude: 9.9252, longitude: 78.1198 },
@@ -128,6 +183,7 @@ async function main() {
         "A ten-day showcase of Naga tribal culture in Kohima — traditional music, dance, crafts, food and games from all of Nagaland's tribes in one venue.",
       categorySlug: "regional-cultural",
       popularity: "POPULAR" as const,
+      featured: true,
       locationSlug: "kohima",
       latitude: 25.6584,
       longitude: 94.1064,
@@ -144,6 +200,7 @@ async function main() {
         "A centuries-old livestock fair turned cultural festival on the shores of Pushkar Lake — camel trading, folk music, hot-air balloons and a full moon mela.",
       categorySlug: "regional-cultural",
       popularity: "POPULAR" as const,
+      featured: false,
       locationSlug: "pushkar",
       latitude: 26.4897,
       longitude: 74.5504,
@@ -160,6 +217,7 @@ async function main() {
         "A beachfront weekend of Goan-Portuguese fusion food stalls and live music, run by local restaurateurs in Panaji.",
       categorySlug: "food",
       popularity: "LOCAL_EMERGING" as const,
+      featured: false,
       locationSlug: "panaji",
       latitude: 15.4989,
       longitude: 73.8278,
@@ -176,6 +234,7 @@ async function main() {
         "India's largest contemporary art exhibition, spread across historic warehouses and public spaces in Fort Kochi.",
       categorySlug: "arts-music",
       popularity: "POPULAR" as const,
+      featured: true,
       locationSlug: "kochi",
       latitude: 9.9658,
       longitude: 76.2422,
@@ -192,6 +251,7 @@ async function main() {
         "Bengali New Year — processions, sweets, new clothes and open houses across Kolkata to mark the start of the Bengali calendar.",
       categorySlug: "regional-cultural",
       popularity: "POPULAR" as const,
+      featured: false,
       locationSlug: "kolkata",
       latitude: 22.5726,
       longitude: 88.3639,
@@ -208,6 +268,7 @@ async function main() {
         "An independent, outdoor music festival set among the rice fields of the Apatani valley — a genuinely offbeat, low-key alternative to India's bigger festival circuits.",
       categorySlug: "arts-music",
       popularity: "HIDDEN" as const,
+      featured: false,
       locationSlug: "ziro-valley",
       latitude: 27.5486,
       longitude: 93.8259,
@@ -224,6 +285,7 @@ async function main() {
         "Tamil Nadu's four-day harvest festival — thanking the sun, the cattle and the land, marked by the ceremonial boiling-over of the Pongal dish itself.",
       categorySlug: "harvest",
       popularity: "POPULAR" as const,
+      featured: false,
       locationSlug: "madurai",
       latitude: 9.9252,
       longitude: 78.1198,
@@ -245,6 +307,7 @@ async function main() {
         status: "PUBLISHED",
         categoryId: category[f.categorySlug].id,
         popularity: f.popularity,
+        featured: f.featured,
         locationId: location[f.locationSlug].id,
         latitude: f.latitude,
         longitude: f.longitude,
@@ -256,7 +319,9 @@ async function main() {
         verificationStatus: "ADMIN_VERIFIED",
         isSeed: true,
       },
-      update: {},
+      // Backfills `featured` (a field added after these rows first existed)
+      // on re-run without touching anything else.
+      update: { featured: f.featured },
     });
 
     await db.festivalOccurrence.upsert({
@@ -304,6 +369,7 @@ async function main() {
       budgetLevel: "MID_RANGE" as const,
       approximateCostPerDay: 3500,
       tags: ["heritage", "history", "photography"],
+      festivalSlugs: ["pushkar-camel-fair"],
     },
     {
       slug: "alleppey-backwaters",
@@ -320,6 +386,7 @@ async function main() {
       budgetLevel: "MID_RANGE" as const,
       approximateCostPerDay: 4000,
       tags: ["nature", "beaches", "offbeat-travel"],
+      festivalSlugs: ["kochi-muziris-biennale"],
     },
     {
       slug: "dzukou-valley",
@@ -336,6 +403,7 @@ async function main() {
       budgetLevel: "BUDGET" as const,
       approximateCostPerDay: 1500,
       tags: ["nature", "adventure", "offbeat-travel"],
+      festivalSlugs: ["hornbill-festival"],
     },
     {
       slug: "hampi",
@@ -392,10 +460,15 @@ async function main() {
         budgetLevel: d.budgetLevel,
         approximateCostPerDay: d.approximateCostPerDay,
         tags: { connect: d.tags.map((slug) => ({ id: tag[slug].id })) },
+        festivals: d.festivalSlugs ? { connect: d.festivalSlugs.map((slug) => ({ slug })) } : undefined,
         verificationStatus: "ADMIN_VERIFIED",
         isSeed: true,
       },
-      update: {},
+      // Backfills the festival↔destination connection (added after these
+      // rows first existed) on re-run without touching anything else.
+      update: {
+        festivals: d.festivalSlugs ? { connect: d.festivalSlugs.map((slug) => ({ slug })) } : undefined,
+      },
     });
     destinationId[d.slug] = created.id;
 

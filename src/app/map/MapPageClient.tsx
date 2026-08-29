@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import {
   MapShell,
@@ -28,10 +29,18 @@ interface MapUrlState {
   month: number | null;
 }
 
-/** Reads map context from the URL once on mount — see the write side in the moveend/month-change effects below. Bypasses next/navigation on purpose: these updates are UI-state bookkeeping, not page navigation, so plain history.replaceState avoids re-running RSC data fetches on every pan. */
-function readUrlState(): MapUrlState | null {
-  if (typeof window === "undefined") return null;
-  const params = new URLSearchParams(window.location.search);
+/**
+ * Parses map context out of Next's `useSearchParams()` — deliberately NOT
+ * `window.location.search`. During a client-side navigation (e.g. a
+ * festival page's "View on Map" link), the new route's components can
+ * start rendering (and read a `useState` lazy initializer) *before* the
+ * browser's `location` object has actually been updated to the new URL —
+ * a real race that was verified with logging: `location.search` was still
+ * empty at the exact moment a naive read ran, even though a read a tick
+ * later was correct. `useSearchParams()` is kept in sync with Next's
+ * router instead of the raw browser API, so it doesn't have this race.
+ */
+function parseUrlState(params: URLSearchParams): MapUrlState | null {
   const lat = params.get("lat");
   const lng = params.get("lng");
   const zoom = params.get("zoom");
@@ -45,6 +54,15 @@ function readUrlState(): MapUrlState | null {
   };
 }
 
+/**
+ * Writes map context back to the URL via plain `history.replaceState`, not
+ * `next/navigation`'s router — these are frequent UI-state bookkeeping
+ * updates (every pan/zoom), and routing through Next's router would
+ * re-run an RSC fetch on each one. This intentionally isn't visible to
+ * `useSearchParams()` (see the read side above) — that's fine, since the
+ * read side only needs the URL as of the *last real navigation*, not a
+ * live view of every bookkeeping rewrite.
+ */
 function writeUrlState(center: { lat: number; lng: number }, zoom: number, month: number | null) {
   if (typeof window === "undefined") return;
   const params = new URLSearchParams();
@@ -56,16 +74,18 @@ function writeUrlState(center: { lat: number; lng: number }, zoom: number, month
 }
 
 export function MapPageClient() {
-  // Safe to read synchronously: initialUrlState only ever feeds MapCanvas's
-  // imperative camera setup (inside an effect, no SSR-rendered DOM to
-  // mismatch). `month`, below, is different — it drives MonthSelector's
-  // rendered `aria-pressed`/className output, so seeding it from
-  // browser-only state here would make the very first client render
-  // disagree with the server render (server always sees `initialUrlState =
-  // null`) and trip a hydration mismatch. It starts at the server-safe
-  // default and gets corrected once, client-side, in the effect below.
-  const [initialUrlState] = useState(() => readUrlState());
+  const searchParams = useSearchParams();
+  // Recomputes only when Next's router actually navigates here with new
+  // params (not on every writeUrlState rewrite above) — see the comment
+  // on parseUrlState.
+  const initialUrlState = useMemo(() => parseUrlState(searchParams), [searchParams]);
 
+  // `month` still starts at the server-safe default and gets corrected
+  // once, client-side, in the effect below — the server render has no
+  // request-independent way to know a Suspense-boundary-crossing
+  // searchParams value is stable yet, so seeding it synchronously here
+  // risks a hydration mismatch. Unlike the old bug, the correction now
+  // reads a value that's actually reliably correct by the time it runs.
   const [month, setMonth] = useState<number | null>(CURRENT_MONTH);
   const [activeLayers, setActiveLayers] = useState<MapLayer[]>([...MAP_LAYERS]);
   const [box, setBox] = useState<BoundingBox | null>(null);
@@ -87,17 +107,10 @@ export function MapPageClient() {
     trackClientEvent({ type: "MAP_INTERACTION", path: "/map", metadata: { action: "map_opened" } });
   }, []);
 
-  // Post-hydration correction for `month` — see the comment above its
-  // useState call. This is the standard "read browser-only state after
-  // mount" pattern for avoiding a hydration mismatch, not the effect
-  // synchronizing-state-with-props anti-pattern the lint rule targets:
-  // initialUrlState is a one-time snapshot of the URL at mount, not a prop
-  // this needs to keep tracking.
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- see comment above
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- post-hydration correction, see the comment on `month` above
     if (initialUrlState) setMonth(initialUrlState.month);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally mount-only, see comment above
-  }, []);
+  }, [initialUrlState]);
 
   const handleViewportChange = useCallback(
     (nextBox: BoundingBox, nextZoom: number, nextCenter: { lat: number; lng: number }) => {

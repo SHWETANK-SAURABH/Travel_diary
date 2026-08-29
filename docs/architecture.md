@@ -66,12 +66,14 @@ Destination Service, ..." — a modular monolith, not microservices. Every
 function is plain async TypeScript, scoped and typed, callable from a route
 handler, a server component, or (later) a queue worker without change.
 
-- `festivals`, `destinations` — public read services (list/filter/get-by-slug/viewport), status-scoped to `PUBLISHED`.
+- `festivals` — public read services (list/filter/get-by-slug/viewport), status-scoped to `PUBLISHED`; since Phase 4 also owns the discovery feed (`getFestivalDiscoveryFeed`), ranking (`ranking.ts`), temporal status (`status.ts`) and geo-nearby (`getNearbyToFestival`).
+- `destinations` — same public read shape as festivals; not yet given the Phase 4 discovery-feed/ranking treatment (that's Phase 5's job).
+- `locations` — small shared helper (`getLocationIdsForState`) that resolves a state slug to itself + every child city/region id, used by both `festivals` and `destinations` for `?state=` filtering and by `map`'s state-summary panel — added once the same "festivals in this state" logic was needed in three places.
 - `map` — combines festivals + destinations into one normalized marker list for a viewport, with month-based filtering.
 - `search` — universal search across festivals/destinations/experiences/food/locations; records zero-result queries.
 - `recommendations` — scores destinations against a traveller context, returns top 5 with reasons.
 - `trips` — CRUD, always scoped by `userId` (no cross-account access is even expressible).
-- `users` — preferences, saved/visited content, and the guest→account merge entry point.
+- `users` — preferences, saved/visited content (`toggleVisitedContent` — a real toggle since Phase 4, not the Phase 1 upsert-only `markVisited`), and the guest→account merge entry point.
 - `analytics` — typed `trackX()` wrappers around the adapter in `lib/analytics`.
 - `admin` — `requireAdmin()` guard + the first real admin write path (`verifyFestivalOccurrence`).
 
@@ -210,6 +212,34 @@ touched carelessly:
 Both were caught by driving a real headless-Chromium session against the
 production build (not just `tsc`/`eslint`/`next build` passing) —
 worth remembering next time "it builds cleanly" feels like enough.
+
+## Content actions: `src/components/discovery` (Phase 4)
+
+Save/Visited/Add-to-Trip/Share started as bespoke JSX inside the map's
+discovery panel in Phase 3. Phase 4 needed the same actions on the festival
+detail page, so they moved to `src/components/discovery` as
+`SaveButton`/`VisitedButton`/`AddToTripButton`/`ShareButton` (plus their
+`useSavedState`/`useVisitedState` hooks) — one implementation, not two kept
+in sync by hand. Both the map panel and `/festivals/[slug]` now import from
+there. Any future content-detail page (destinations in Phase 5) should do
+the same rather than re-implementing these.
+
+## Reading URL state in a client component: `useSearchParams()`, not `window.location`
+
+`src/app/map/MapPageClient.tsx` originally read its `?lat&lng&month` state
+via `window.location.search` inside a `useState` lazy initializer. That's
+correct on a hard navigation/reload, but breaks on a Next.js **client-side**
+navigation (e.g. a `<Link>` from another page): instrumented logging showed
+`location.search` was still empty at the exact moment the target page's
+component first rendered — Next mounts the new route's components
+essentially concurrently with, not strictly after, updating
+`window.location`. The fix was `next/navigation`'s `useSearchParams()`,
+which stays in sync with the router instead of the raw browser API (and
+requires the reading component to sit under a `<Suspense>` boundary, now in
+`src/app/map/page.tsx`). General lesson for this codebase: any client
+component that needs the *current* URL's search params should use
+`useSearchParams()`, never a direct `window.location` read — the latter
+only reliably matches the rendered route on a full page load.
 
 ## Known trade-offs
 

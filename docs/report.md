@@ -403,4 +403,179 @@ actually driving the built app in a browser:
 
 ---
 
-<!-- Phase 4+ reports appended below as each phase completes. -->
+## Phase 4 — Festival Discovery System
+
+**Status: complete.**
+
+### Summary
+
+Built the complete festival discovery experience on top of the existing
+data model: a real `/festivals` listing page (Happening Now / Upcoming /
+Browse-by-Month sections, driven by a ranking service) and a rich
+`/festivals/[slug]` detail page (hero, countdown, gallery, progressive
+disclosure sections, nearby discovery, Save/Visited/Add-to-Trip/Share,
+structured data). No destination system, recommendation engine, calendar,
+trip builder, or CMS work — all explicitly out of scope for this phase.
+
+### 1. Festival data model
+
+No changes to the core Festival/FestivalOccurrence shape from Phase 1 — it
+already had everything this phase needed (category, popularity, occurrences
+with `dateConfidence`). Three additions, each directly required by an
+explicit spec line rather than spec-cover reflex:
+
+- **`Festival.featured: Boolean`** — the spec names "editorial featuring"
+  as a ranking signal in three separate places (Phase 3 map relevance,
+  Phase 4/5 discovery ranking); there was no field for it.
+- **`Destination.popularity`** (carried over from Phase 3's Hidden Gems
+  layer work) — reused here for the destinations shown in "Nearby".
+- **`Location.{nearestAirport,nearestRailwayStation,roadAccessNotes,
+  localTransportNotes,accommodationNotes}`** — "How to Reach"/"Where to
+  Stay" had literally no backing fields before this phase. Kept at
+  city/region `Location` level, not duplicated per festival, since
+  everything in the same city shares the same airport/station/hotels.
+
+All three via hand-written additive migrations (see the Phase 3 report for
+why `migrate dev` isn't used in this environment — same reasoning applies).
+
+### 2. Festival ranking approach
+
+`src/features/festivals/ranking.ts` — a transparent weighted-sum heuristic,
+not a learned model: featured (+100) > happening-now (+60) > upcoming
+within 30/90/90+ days (+40/+20/+5) > selected-month match (+30) >
+popularity, with `LOCAL_EMERGING`/`HIDDEN` scoring the same as `POPULAR`
+(8+10 diversity boost vs. 15 flat) per the spec's explicit "do not use
+popularity as the only ranking signal." `getFestivalDiscoveryFeed()` in
+`src/features/festivals/service.ts` annotates every published festival with
+its most relevant occurrence + computed status, then ranks once; the
+listing page filters that single ranked list into its three sections
+instead of issuing three separate queries.
+
+### 3. Festival page architecture
+
+`/festivals/[slug]` is a server component that fetches everything up front
+(`getFestivalBySlug` — now includes foods/experiences/destinations/events/
+location-with-parent; `getFestivalMedia`; `getNearbyToFestival`) and renders
+mostly static HTML, with small client islands only where interactivity is
+unavoidable: `Countdown` (must reflect the viewer's actual current time,
+not build/request time — see below), the gallery lightbox, and the
+Save/Visited/Add-to-Trip/Share buttons (extracted to `src/components/
+discovery` — see #8).
+
+### 4. Date/status implementation
+
+`src/features/festivals/status.ts` — `resolveFestivalStatus()` derives
+Happening Now / Upcoming / Past / Expected / Not Announced from one
+occurrence row; `daysUntil()` backs the countdown. `Countdown.tsx` is a
+client component specifically because the day count must reflect the
+browser's clock at *view* time — computing it server-side risked baking a
+stale count into a statically-optimized render.
+
+### 5. Map integration
+
+"View on Map" links to `/map?lat=&lng=&zoom=11&month=` using the
+festival's coordinates and next-occurrence month — reusing Phase 3's URL
+state format directly, no new map code needed. Finding and fixing the bug
+below was necessary to make this link actually work.
+
+### 6. Nearby discovery implementation
+
+Two sources, merged and deduplicated: the curated `Festival.destinations`
+m2m relation (host-region connections — added to seed data this phase,
+previously unpopulated) shown first, then geographic proximity via
+`getNearbyToFestival()` (a ~150km bounding box around the festival's point,
+reusing `padBoundingBox` from Phase 1's geo lib) for festivals/destinations
+that aren't curated. "Related Experiences" and "Food" use the direct
+`Festival.experiences`/`.foods` relations, not geo-proximity — the
+Experience entity has no dedicated detail page yet, so those render as
+text rather than dead links.
+
+### 7. SEO implementation
+
+`generateMetadata` (title/description/canonical/OG including a real social
+image now — the previous version had no image), `Festival` + `BreadcrumbList`
+JSON-LD (same `<` → `<` escaping pattern from Phase 1's festival page,
+carried forward). `/festivals` itself also got real `PAGE_VIEW`/
+`FESTIVAL_VIEW` analytics tracking, which existed as unused helper
+functions in `src/features/analytics/service.ts` since Phase 1 but had
+never actually been called from a page.
+
+### 8. Save/Visited/Add-to-Trip integration
+
+Extracted the map's Phase 3 Save/Add-to-Trip buttons into
+`src/components/discovery` (`SaveButton`, `AddToTripButton`, plus new
+`VisitedButton`, `ShareButton`) so the festival page and the map's
+discovery panel share one implementation instead of two. Added "Visited" as
+a real toggle (`toggleVisitedContent`/`isContentVisited` in
+`src/features/users/service.ts`, `/api/visited` route) — the Phase 1
+version was upsert-only and couldn't un-mark. Visited is authenticated-only
+by design: the Phase 1 guest-persistence architecture only ever covered
+save + trips, not visited state, so a signed-out user is prompted to sign
+in rather than getting a silently-local visited flag with no account-merge
+path.
+
+### Files created/modified
+
+New: `src/components/festivals/*` (Card, StatusBadge, Countdown, Gallery,
+NearbyDiscovery, MonthFilter, FilterPills), `src/components/discovery/*`
+(contentKind, useSavedState — moved from `components/map`, useVisitedState,
+SaveButton, VisitedButton, AddToTripButton, ShareButton),
+`src/components/ui/Disclosure.tsx`, `src/features/festivals/{status,
+ranking}.ts`, `src/features/locations/service.ts` (shared state→location-ids
+resolver, also backported into `features/festivals`+`features/destinations`
+list filters for real `?state=` support), `src/app/api/visited/route.ts`.
+Modified: `src/features/festivals/{service,types}.ts` (discovery feed,
+nearby, media wiring), `src/app/festivals/page.tsx` and `[slug]/page.tsx`
+(rewritten), `src/app/destinations/page.tsx` (hidden-gem badge, `?state=`),
+`prisma/schema.prisma` + 2 migrations, `prisma/seed.ts` (transport/
+accommodation data, `featured` flags, festival↔destination connections).
+
+### A real bug found and fixed this phase (client-side navigation into `/map`)
+
+Not caught by `tsc`/`eslint`/`next build` — only surfaced by actually
+clicking "View on Map" in a browser against the production build (the same
+discipline that caught Phase 3's three bugs). `MapPageClient` read its
+initial `?lat&lng&month` state via `window.location.search` inside a
+`useState` lazy initializer. That's reliable on a hard navigation/reload
+(confirmed working in Phase 3 testing) but **not** on a Next.js
+client-side navigation: instrumented logging showed `location.search` was
+still empty at the exact moment the new page's component first rendered —
+Next mounts the target route's components essentially concurrently with,
+not strictly after, updating `window.location`. The month selector (and
+the map's initial camera position) would silently fall back to defaults,
+so a "View on Map" link from a December festival opened the map showing
+the current month instead. Fixed by reading state via `next/navigation`'s
+`useSearchParams()` instead, which is kept in sync with the router rather
+than the raw browser API (`/map/page.tsx` now wraps `MapPageClient` in
+`<Suspense>`, which the hook requires). Verified both directions
+afterward: client-side nav now correctly restores December, and the
+original reload-restoration path (Phase 3's fix) still works unmodified.
+
+### Tests/checks performed
+
+- `npm run typecheck`, `npm run lint`, `npm run build` — all clean.
+- Real end-to-end verification via headless Chromium against the
+  **production build**: festival listing (desktop/mobile, month/category/
+  classification filters, images loading via the Next.js image optimizer),
+  festival detail (desktop/mobile, disclosure expansion, Save → guest
+  localStorage toggling to "Saved", Add to Trip → "Added", 404 for an
+  unknown slug), and the View on Map deep link end-to-end including the
+  bug above and its fix.
+
+### Known gaps / follow-ups
+
+- "Add to Trip" is still the Phase 3 temporary interaction state (resets
+  on reload) — unchanged, still correctly out of scope per the spec.
+- No "What to Expect" section — the spec explicitly warns "do not
+  fabricate details," and there's no real backing content for it yet;
+  omitted rather than invented, matching "only show sections with
+  meaningful content."
+- Experience/Food entities still have no dedicated detail pages, so
+  "Related Experiences"/"Food" render as text, not links — consistent with
+  "use the correct route structure and a clean placeholder" where no page
+  exists at all yet, rather than fabricating one.
+- No automated tests — same gap noted in Phases 1–3.
+
+---
+
+<!-- Phase 5+ reports appended below as each phase completes. -->

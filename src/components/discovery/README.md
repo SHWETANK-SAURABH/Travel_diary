@@ -1,8 +1,13 @@
 # components/discovery
 
-Reserved for cross-content discovery surfaces (Phase 2+): the homepage,
-recommendation results ("Top 5, and why"), and universal search results —
-anything that blends festivals/destinations/experiences/food together
-rather than belonging to one content type.
+Shared content-action primitives usable from any content type/page — save,
+mark-visited, add-to-trip, share (`SaveButton`, `VisitedButton`,
+`AddToTripButton`, `ShareButton`, plus their hooks). Introduced in Phase 3
+for the map's discovery panel, now reused as-is by the Phase 4 festival
+detail page — the whole point of extracting them here.
 
-Data comes from `src/features/search` and `src/features/recommendations`.
+Still reserved, not yet built: cross-content discovery surfaces that blend
+festivals/destinations/experiences/food together — the homepage,
+recommendation results ("Top 5, and why"), universal search results. Data
+for those will come from `src/features/search` and
+`src/features/recommendations`.
