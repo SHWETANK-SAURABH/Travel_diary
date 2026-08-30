@@ -12,7 +12,7 @@ import { KIND_TO_CONTENT_TYPE, type DiscoveryKind } from "./contentKind";
  * hook, one call site, so every "Save" button (the map's discovery panel,
  * festival/destination detail pages) behaves identically.
  */
-export function useSavedState(kind: DiscoveryKind, id: string) {
+export function useSavedState(kind: DiscoveryKind, id: string, source?: string) {
   const { data: session } = useSession();
   const contentType = KIND_TO_CONTENT_TYPE[kind];
   const queryClient = useQueryClient();
@@ -44,7 +44,7 @@ export function useSavedState(kind: DiscoveryKind, id: string) {
     } else {
       guestToggle(contentType, id);
     }
-    trackClientEvent({ type: "SAVE", contentType, contentId: id });
+    trackClientEvent({ type: "SAVE", contentType, contentId: id, metadata: source ? { source } : undefined });
   }
 
   return { saved, toggle };

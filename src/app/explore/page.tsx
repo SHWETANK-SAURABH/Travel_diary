@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import { getFestivalDiscoveryFeed, getHappeningNowFestivals } from "@/features/festivals/service";
 import { getDestinationDiscoveryFeed } from "@/features/destinations/service";
+import { listInterestTags } from "@/features/users/service";
 import { trackPageView } from "@/features/analytics/service";
 import { Container } from "@/components/layout";
 import { Button } from "@/components/ui";
 import { FestivalCard } from "@/components/festivals";
 import { DestinationCard } from "@/components/destinations";
 import { TrackedLink, TrackedCardWrapper } from "@/components/discovery";
+import { RecommendationRail } from "@/components/recommendations";
 import { calendarHref, mapHref, festivalsHref, destinationsHref, monthName } from "@/features/discovery/context";
 
 export const metadata: Metadata = {
@@ -21,17 +23,16 @@ export const dynamic = "force-dynamic";
 const CURRENT_MONTH = new Date().getMonth() + 1;
 
 export default async function ExplorePage() {
-  const [happeningNow, monthFestivals, monthDestinations, hiddenFestivals, hiddenDestinations] = await Promise.all([
+  const [happeningNow, monthFestivals, hiddenFestivals, hiddenDestinations, interestTags] = await Promise.all([
     getHappeningNowFestivals(3),
     getFestivalDiscoveryFeed({ month: CURRENT_MONTH }),
-    getDestinationDiscoveryFeed({ month: CURRENT_MONTH }),
     getFestivalDiscoveryFeed({ popularity: "HIDDEN" }),
     getDestinationDiscoveryFeed({ popularity: "HIDDEN" }),
+    listInterestTags(),
   ]);
   void trackPageView("/explore");
 
   const thisMonthFestivals = monthFestivals.filter((f) => f.occurrence?.startDate?.getUTCMonth() === CURRENT_MONTH - 1).slice(0, 3);
-  const bestPlacesThisMonth = monthDestinations.slice(0, 4);
   const hiddenPicks = [...hiddenDestinations.slice(0, 2), ...hiddenFestivals.slice(0, 2)];
 
   return (
@@ -92,21 +93,9 @@ export default async function ExplorePage() {
             </section>
           )}
 
-          {bestPlacesThisMonth.length > 0 && (
-            <section>
-              <h2 className="text-h2 font-display">Best Places to Visit This Month</h2>
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {bestPlacesThisMonth.map((destination) => (
-                  <TrackedCardWrapper
-                    key={destination.id}
-                    event={{ type: "EXPLORE_INTERACTION", contentType: "DESTINATION", contentId: destination.id, metadata: { action: "discovery_clicked", section: "best_this_month" } }}
-                  >
-                    <DestinationCard destination={destination} />
-                  </TrackedCardWrapper>
-                ))}
-              </div>
-            </section>
-          )}
+          <section>
+            <RecommendationRail month={CURRENT_MONTH} interestTags={interestTags} context="explore" />
+          </section>
 
           {hiddenPicks.length > 0 && (
             <section className="rounded-lg border border-border bg-marigold-50/50 p-6">

@@ -89,18 +89,15 @@ enum BudgetLevel {
   LUXURY
 }
 
+// Phase 7 (Personalization) chose this exact vocabulary because it's what
+// the onboarding UI presents to users verbatim — see docs/database.md for
+// why this replaced the Phase 1 placeholder (RELAXED/ADVENTURE/CULTURAL/
+// OFFBEAT/MIXED), which nothing had ever written data against.
 enum TravelStyle {
-  RELAXED
-  ADVENTURE
-  CULTURAL
-  OFFBEAT
-  MIXED
-}
-
-enum CrowdPreference {
-  PREFER_CROWDED
-  PREFER_QUIET
-  NO_PREFERENCE
+  BACKPACKER
+  BUDGET
+  COMFORTABLE
+  LUXURY
 }
 
 enum TagCategory {
@@ -144,6 +141,9 @@ enum AnalyticsEventType {
   SEARCH_RESULT_CLICK
   CALENDAR_INTERACTION
   EXPLORE_INTERACTION
+  ONBOARDING_INTERACTION
+  PREFERENCE_UPDATED
+  RECOMMENDATION_VIEWED
   SAVE
   ADD_TO_TRIP
   TRIP_CREATED
@@ -235,9 +235,22 @@ model UserPreference {
   travelDateEnd   DateTime?
   durationDays    Int?
   travellerCount  Int?
-  budgetLevel     BudgetLevel?
-  travelStyle     TravelStyle?
-  crowdPreference CrowdPreference?
+
+  // Numeric total trip budget in INR (the spec: "the system should store a
+  // numeric budget"), alongside the coarse BUDGET/MID_RANGE/LUXURY bucket
+  // (kept in sync — see deriveBudgetLevel() in src/features/users/service.ts)
+  // that the recommendation engine compares directly against
+  // Destination.budgetLevel.
+  budgetAmount Int?
+  budgetLevel  BudgetLevel?
+
+  travelStyle TravelStyle?
+
+  // 0 (busy & lively) .. 100 (quiet & peaceful) — a continuous slider value,
+  // not a category, per the spec's "store it in a way that can be used
+  // numerically by the ranking engine." Replaced the Phase 1 3-value
+  // CrowdPreference enum, which nothing had ever written data against.
+  crowdPreference Int?
 
   interests Tag[] @relation("UserPreferenceInterests")
 

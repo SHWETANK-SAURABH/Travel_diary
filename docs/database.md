@@ -230,6 +230,57 @@ calendar/explore analytics requirements. `CALENDAR_INTERACTION` and
 `"festival_clicked"`, `"discovery_clicked"`, ...) rather than a dedicated
 enum value per action — the same shape `MAP_INTERACTION` already used.
 
+## Preference model changes (Phase 7)
+
+`UserPreference` gained real personalization fields (migration
+`20260831090000_personalization_preferences`):
+
+- **`travelStyle: TravelStyle`** — the enum was **replaced**, not extended.
+  Phase 1's placeholder values (`RELAXED | ADVENTURE | CULTURAL | OFFBEAT |
+  MIXED`) were a guess with no spec backing them; Phase 7's spec explicitly
+  names the onboarding UI's real options (`BACKPACKER | BUDGET | COMFORTABLE
+  | LUXURY`), which the UI now presents verbatim. Since `UserPreference` had
+  zero rows at the time (nothing had ever written this field), the migration
+  drops and recreates the type rather than value-by-value renaming.
+- **`crowdPreference: Int?`** (0–100) — replaced the 3-value
+  `CrowdPreference` enum (`PREFER_CROWDED | PREFER_QUIET | NO_PREFERENCE`)
+  with a continuous slider value, per the spec's explicit "store it in a way
+  that can be used numerically by the ranking engine." Same zero-rows
+  safety as `travelStyle`.
+- **`budgetAmount: Int?`** — new. A numeric total-trip budget in INR,
+  alongside the existing `budgetLevel: BudgetLevel?` (`BUDGET | MID_RANGE |
+  LUXURY`) bucket. The onboarding UI's 4 presets (₹10K–20K / ₹20K–40K /
+  ₹40K–75K / ₹75K+) collapse into the 3 `BudgetLevel` values via
+  `deriveBudgetLevel()` (`src/lib/preferences/budget.ts`) whenever
+  `budgetAmount` is written, so the two fields never drift out of sync —
+  `budgetLevel` is what the recommendation engine compares directly against
+  `Destination.budgetLevel`; `budgetAmount` is what it compares against
+  `Destination.approximateCostPerDay × tripDays` for a real numeric budget
+  fit, not just a bucket match.
+
+`deriveBudgetLevel()` lives in `src/lib`, not `src/features/users`,
+specifically so both `src/features/users/service.ts` (the authenticated
+preference upsert) and `src/lib/guest/merge.ts` (the guest-to-account
+preference merge) can import it without `lib` depending back on `features`.
+
+## Analytics event types (Phase 6/7 additions)
+
+`AnalyticsEventType` gained `SEARCH_OPENED`, `SEARCH_RESULT_CLICK`,
+`CALENDAR_INTERACTION`, and `EXPLORE_INTERACTION` in Phase 6 (migration
+`20260830140000_search_calendar_explore_analytics`), then
+`ONBOARDING_INTERACTION`, `PREFERENCE_UPDATED`, and `RECOMMENDATION_VIEWED`
+in Phase 7 (migration `20260831090000_personalization_preferences`).
+`CALENDAR_INTERACTION`, `EXPLORE_INTERACTION`, and `ONBOARDING_INTERACTION`
+are each one generic type disambiguated by `metadata.action`
+(`"month_selected"`, `"map_cta_clicked"`, `"festival_clicked"`,
+`"discovery_clicked"`, `"started"`, `"completed"`, `"skipped"`, ...) rather
+than a dedicated enum value per action — the same shape `MAP_INTERACTION`
+already used. Recommendation saves/add-to-trip deliberately reuse the
+existing `SAVE`/`ADD_TO_TRIP` types (with `metadata.source` distinguishing
+where the action happened) rather than adding `RECOMMENDATION_SAVED`/
+`RECOMMENDATION_ADDED_TO_TRIP` variants — the same action on the same
+content, just from a different card.
+
 ## Seed data
 
 `prisma/seed.ts` (`npm run db:seed`) creates a small, clearly-marked demo

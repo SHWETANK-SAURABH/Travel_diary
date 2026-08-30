@@ -3,7 +3,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ContentType } from "@prisma/client";
-import type { GuestState, GuestTripDraft } from "./types";
+import type { GuestPreferences, GuestState, GuestTripDraft } from "./types";
 
 const GUEST_STORAGE_KEY = "traveldiary.guest.v1";
 
@@ -12,6 +12,7 @@ interface GuestStore extends GuestState {
   isSaved(contentType: ContentType, contentId: string): boolean;
   upsertTrip(trip: GuestTripDraft): void;
   removeTrip(localId: string): void;
+  setPreferences(preferences: Omit<GuestPreferences, "updatedAt">): void;
   clear(): void;
 }
 
@@ -26,6 +27,7 @@ export const useGuestStore = create<GuestStore>()(
     (set, get) => ({
       savedItems: [],
       trips: [],
+      preferences: null,
 
       toggleSaved(contentType, contentId) {
         const exists = get().isSaved(contentType, contentId);
@@ -54,8 +56,12 @@ export const useGuestStore = create<GuestStore>()(
         set((state) => ({ trips: state.trips.filter((t) => t.localId !== localId) }));
       },
 
+      setPreferences(preferences) {
+        set({ preferences: { ...preferences, updatedAt: new Date().toISOString() } });
+      },
+
       clear() {
-        set({ savedItems: [], trips: [] });
+        set({ savedItems: [], trips: [], preferences: null });
       },
     }),
     { name: GUEST_STORAGE_KEY }

@@ -12,7 +12,7 @@ import { trackClientEvent } from "@/lib/analytics/client";
  * it: swap the body of `onClick` for a real "add item to trip" call once
  * that exists, without changing the button's API.
  */
-export function AddToTripButton({ id, size = "md" }: { id: string; size?: ButtonProps["size"] }) {
+export function AddToTripButton({ id, size = "md", source }: { id: string; size?: ButtonProps["size"]; source?: string }) {
   const [added, setAdded] = useState(false);
 
   return (
@@ -21,7 +21,7 @@ export function AddToTripButton({ id, size = "md" }: { id: string; size?: Button
       variant={added ? "secondary" : "outline"}
       onClick={() => {
         setAdded((v) => !v);
-        trackClientEvent({ type: "ADD_TO_TRIP", contentId: id });
+        trackClientEvent({ type: "ADD_TO_TRIP", contentId: id, metadata: source ? { source } : undefined });
       }}
     >
       {added ? <Check className="h-4 w-4" /> : <Plus className="h-4 w-4" />}

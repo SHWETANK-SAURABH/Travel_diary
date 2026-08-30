@@ -9,9 +9,13 @@ import {
 } from "@/features/festivals/service";
 import { resolveFestivalStatus } from "@/features/festivals/status";
 import { trackFestivalView } from "@/features/analytics/service";
+import { auth } from "@/lib/auth";
+import { getPreference } from "@/features/users/service";
+import { recommendNearby, preferenceToContext, hasPersonalizationSignal } from "@/features/recommendations";
 import { Container } from "@/components/layout";
 import { Badge, Disclosure, ResponsiveImage, Button, Gallery } from "@/components/ui";
 import { SaveButton, VisitedButton, AddToTripButton, ShareButton, NearbyDiscovery } from "@/components/discovery";
+import { RecommendationCard } from "@/components/recommendations";
 import { FestivalStatusBadge, Countdown } from "@/components/festivals";
 import { siteConfig } from "@/config/site";
 
@@ -48,10 +52,23 @@ export default async function FestivalDetailPage({ params }: PageProps) {
   if (!festival) notFound();
   void trackFestivalView(festival.id);
 
-  const [media, nearby] = await Promise.all([
+  const [media, nearby, session] = await Promise.all([
     getFestivalMedia(festival.id),
     getNearbyToFestival(festival),
+    auth(),
   ]);
+
+  // Context-aware "you're viewing this festival" recommendations (spec
+  // §31) — mirrors the same authenticated-only upgrade on the destination
+  // detail page; see its comment for why guests keep the plain nearby list.
+  let personalizedNearby: Awaited<ReturnType<typeof recommendNearby>> | null = null;
+  if (session) {
+    const preference = await getPreference(session.user.id);
+    const context = preferenceToContext(preference, { excludeId: festival.id });
+    if (hasPersonalizationSignal(context)) {
+      personalizedNearby = await recommendNearby({ kind: "festival", id: festival.id, latitude: festival.latitude, longitude: festival.longitude }, context);
+    }
+  }
 
   const occurrence = pickRelevantOccurrence(festival.occurrences);
   const status = resolveFestivalStatus(occurrence);
@@ -215,10 +232,45 @@ export default async function FestivalDetailPage({ params }: PageProps) {
             </Disclosure>
           )}
 
-          {(nearbyDestinations.length > 0 || nearbyFestivals.length > 0) && (
-            <Disclosure title="Nearby" defaultOpen>
-              <NearbyDiscovery festivals={nearbyFestivals} destinations={nearbyDestinations} />
+          {personalizedNearby && (personalizedNearby.destinations.length > 0 || personalizedNearby.festivals.length > 0) ? (
+            <Disclosure title="Recommended Nearby" defaultOpen>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {personalizedNearby.destinations.map((rec) => (
+                  <RecommendationCard
+                    key={rec.item.id}
+                    kind="destination"
+                    id={rec.item.id}
+                    slug={rec.item.slug}
+                    name={rec.item.name}
+                    locationName={rec.item.location.name}
+                    imageUrl={rec.item.imageUrl}
+                    matchPercent={rec.matchPercent}
+                    reasons={rec.reasons}
+                    context="festival_detail_nearby"
+                  />
+                ))}
+                {personalizedNearby.festivals.map((rec) => (
+                  <RecommendationCard
+                    key={rec.item.id}
+                    kind="festival"
+                    id={rec.item.id}
+                    slug={rec.item.slug}
+                    name={rec.item.name}
+                    locationName={rec.item.location.name}
+                    imageUrl={rec.item.imageUrl}
+                    matchPercent={rec.matchPercent}
+                    reasons={rec.reasons}
+                    context="festival_detail_nearby"
+                  />
+                ))}
+              </div>
             </Disclosure>
+          ) : (
+            (nearbyDestinations.length > 0 || nearbyFestivals.length > 0) && (
+              <Disclosure title="Nearby" defaultOpen>
+                <NearbyDiscovery festivals={nearbyFestivals} destinations={nearbyDestinations} />
+              </Disclosure>
+            )
           )}
         </div>
       </Container>

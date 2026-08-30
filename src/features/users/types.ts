@@ -1,12 +1,16 @@
-import type { BudgetLevel, CrowdPreference, TravelStyle } from "@prisma/client";
+import type { BudgetLevel, TravelStyle } from "@prisma/client";
 
 export interface UpdatePreferenceInput {
   travelDateStart?: Date;
   travelDateEnd?: Date;
   durationDays?: number;
   travellerCount?: number;
-  budgetLevel?: BudgetLevel;
+  /** Numeric total trip budget in INR — `budgetLevel` is derived from this, see deriveBudgetLevel(). */
+  budgetAmount?: number;
   travelStyle?: TravelStyle;
-  crowdPreference?: CrowdPreference;
+  /** 0 (busy & lively) .. 100 (quiet & peaceful). */
+  crowdPreference?: number;
   interestTagIds?: string[];
 }
+
+export type { BudgetLevel };

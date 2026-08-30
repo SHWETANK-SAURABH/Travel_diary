@@ -377,3 +377,108 @@ no session concept, so a second `SEARCH_QUERY` close in time to a first one
 is already a refinement in the data; adding an event just to restate that
 would be the "excessive analytics events that provide no meaningful
 insight" the spec warns against.
+
+## Recommendation engine: transparent weighted scoring, not a model (Phase 7)
+
+`src/features/recommendations/` is the whole engine: `weights.ts` (every
+number, centrally configurable — spec §39's "do not hardcode weights in
+multiple components"), `scoring.ts` (per-signal functions each returning
+0..1, composed into one weighted sum per `DEFAULT_WEIGHTS`), `explain.ts`
+(deterministic threshold → reason-string rules, never an LLM), `diversity.ts`
+(greedy top-N selection with a soft per-category/per-geography cap), and
+`service.ts` (`recommendDestinations`/`recommendFestivals`/`recommendNearby`
+— the three functions §38 asks for by name). Nothing here is a black box:
+`matchPercent` is `Math.round(score * 100)` of the same weighted sum a
+developer can read top to bottom in `scoring.ts`.
+
+The two-path shape every one of the three service functions follows:
+
+```
+No personalization signal (hasPersonalizationSignal() is false)
+      → wrap the *existing* anonymous ranking (Phase 5/6's
+        getDestinationDiscoveryFeed/getFestivalDiscoveryFeed, already
+        reused, not reimplemented) with honest, signal-based reasons and
+        matchPercent: null — never a fabricated percentage (spec §24/§45).
+
+Real signal present (interests, travel style, budget, duration, or crowd
+preference set — by an authenticated user's UserPreference row, or a
+guest's local store)
+      → score every candidate against scoreDestination/scoreFestival,
+        explain via explain.ts, pick a diverse top N via diversity.ts.
+```
+
+`hasPersonalizationSignal()` is the one gate deciding which path runs — it
+deliberately does not fire the scored path just because a `month` or
+`stateSlug` is present, since those are page *context*, not traveller
+*preference*, and scoring against nothing but context would just reproduce
+the anonymous ranking while lying about having a match score.
+
+## Guests get personalization too, not just an anonymous fallback
+
+The spec's own examples (§24: "Best for October", never "Personalized for
+you", for anonymous users) are about *unset* preferences, not about being
+signed out — §43 explicitly has guests optionally setting preferences and
+merging them into an account later. So personalization here is keyed on
+*whether real preference data exists*, not on `session`:
+
+- **Server-rendered surfaces** (festival/destination detail pages'
+  "Recommended Nearby") only personalize for signed-in visitors, since the
+  server can see a `UserPreference` row but never a guest's localStorage.
+  Guests keep the unchanged Phase 4/5 plain nearby list here — a deliberate
+  scope trim (see `docs/report.md`), not an oversight.
+- **Client-rendered surfaces** (Explore's recommendation rail) personalize
+  for *both* — signed-in requests are scored server-side against the real
+  `UserPreference` row (client-supplied personalization fields are ignored
+  entirely for these, spec §49); guest requests carry whatever the visitor
+  set locally (`src/lib/guest/store.ts`) in the POST body, since that data
+  only ever describes the requester themself and carries no comparable
+  trust requirement. This is *why* the rail is a client component at all
+  (see "Analytics/caching" below) rather than server-rendered like the rest
+  of `/explore`.
+
+## Two Server→Client boundary bugs, both caught by driving the real page
+
+1. **A Server Component passed a function prop to a Client Component.**
+   `OnboardingLauncher`'s `renderTrigger` prop is a function — fine when the
+   *caller* is itself a Client Component (`RecommendationRail`), but
+   `/profile` is a Server Component, and React Server Components cannot
+   serialize a function across that boundary ("Functions cannot be passed
+   directly to Client Components"). This didn't show up in `next build` or
+   `tsc` — TypeScript doesn't know about the RSC serialization boundary —
+   only in the server's runtime log and a crashed `/profile` render for
+   signed-in users. Fixed with `src/app/profile/PreferencesEditor.tsx`, a
+   thin Client Component that receives only serializable props from the
+   server and builds the function-valued `renderTrigger` itself, entirely
+   client-side. General rule for this codebase: a `renderTrigger`/render-
+   prop-shaped prop on a Client Component may only be supplied by another
+   Client Component, never directly by a page.
+2. **A new analytics event type reached the enum but not the Zod schema.**
+   `RECOMMENDATION_VIEWED` (and Phase 7's other two new types) were added to
+   `prisma/schema.prisma` and the migration, but `src/lib/validation/map.ts`'s
+   `analyticsEventSchema` — the *separate* list `/api/analytics/track`
+   actually validates client-submitted events against — wasn't updated in
+   the same pass. Every `RECOMMENDATION_VIEWED` event silently 400'd. Caught
+   by logging every failed network response during browser verification,
+   not by any type check (Zod's `z.enum([...])` is a plain string literal
+   list, structurally unrelated to the Prisma enum it's meant to mirror).
+   No structural fix applied — same failure mode as Phase 6's four event
+   types, which were added to both places together; this is a "remember to
+   grep for `analyticsEventSchema` when adding an event type" discipline
+   note, not a bug worth introducing a code-generation step to prevent.
+
+## Two small, deliberate scope trims
+
+- **Map personalization** (spec §32: "integrate with the existing map
+  relevance service") — not wired this phase. The map's own viewport/
+  discovery ranking (Phase 3) is untouched; feeding a signed-in viewer's
+  preferences into it would mean either a client round-trip on every
+  viewport change or duplicating the map's ranking query, and the spec's
+  own hedge ("for now, integrate...") reads as loose guidance rather than a
+  hard requirement. Documented here rather than silently skipped.
+- **Destination-recommendation UI is destination-only on Explore.** Spec
+  §13 lists festival recommendations as a required type too, and
+  `recommendFestivals` is real, tested code — exercised by
+  `recommendNearby` on both detail pages — but Explore's single "Top 5"
+  rail (spec §20's own worked example is all destinations: "1. Meghalaya
+  2. Hampi...") stayed destinations-only rather than adding a second,
+  visually competing "Recommended Festivals" rail on the same page.

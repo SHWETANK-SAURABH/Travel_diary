@@ -948,4 +948,270 @@ selected.
 
 ---
 
-<!-- Phase 7+ reports appended below as each phase completes. -->
+## Phase 7 — Personalization & Recommendation Engine
+
+**Status: complete.**
+
+### Summary
+
+Built the first real recommendation engine: a transparent, deterministic,
+weighted-scoring system (`src/features/recommendations/`) — not an LLM, not
+a black box — that produces Top-5 destination recommendations with a match
+percentage and 2-4 plain-English reasons, plus the optional 7-step
+onboarding wizard that feeds it, guest-side preference persistence, an
+authenticated preferences editor on `/profile`, and a context-aware
+"Recommended Nearby" upgrade on festival/destination detail pages. Both
+signed-in and anonymous/guest visitors get real recommendations; only
+signed-in visitors with no preferences set (or guests before onboarding)
+see the honest anonymous fallback, never a fabricated match score.
+
+### 1. Preference model
+
+`UserPreference` gained real fields, replacing two Phase 1 placeholders
+that nothing had ever written data to: `travelStyle` now uses the
+onboarding UI's actual vocabulary (`BACKPACKER | BUDGET | COMFORTABLE |
+LUXURY`, replacing `RELAXED | ADVENTURE | CULTURAL | OFFBEAT | MIXED`), and
+`crowdPreference` became a continuous `Int` (0 busy/lively .. 100 quiet/
+peaceful) replacing a 3-value enum, per the spec's explicit "store it in a
+way that can be used numerically." New: `budgetAmount: Int?`, a numeric
+total-trip budget in INR alongside the existing `budgetLevel` bucket (kept
+in sync via `deriveBudgetLevel()`). Interests reuse the existing `Tag`
+taxonomy (`category: INTEREST`) unchanged — full rationale in
+`docs/database.md`.
+
+### 2. Onboarding flow
+
+`src/components/onboarding/OnboardingWizard.tsx` — 7 steps (dates,
+duration, travellers, budget, interests, travel style, crowd preference),
+chips/presets/a slider per the spec's "avoid giant forms," a progress bar,
+Back/Next, and skip/finish-early available at every step ("Skip for now"
+before any answer is given, "Save & finish" once at least one is). One
+wizard, reused for both first-time onboarding (`mode="onboarding"`) and
+profile editing (`mode="edit"`) — same steps, same validation. Persistence
+is the caller's job, not the wizard's: `OnboardingLauncher` decides guest
+store vs. `PUT /api/preferences` based on session state.
+
+### 3. Recommendation scoring model
+
+`src/features/recommendations/scoring.ts` — per-signal functions
+(interest/travel-style/crowd/duration fit → blended into "personal fit";
+season-or-date fit; budget fit; festival/destination-connection fit;
+quality; uniqueness; popularity), each normalized to 0..1, composed into
+one weighted sum (`scoreDestination`/`scoreFestival`). `matchPercent` is
+literally `Math.round(score * 100)` of that same sum — no separate
+"confidence" number invented for display. Full model + the two-path
+(anonymous-fallback vs. scored) architecture writeup is in
+`docs/architecture.md`.
+
+### 4. Initial weights
+
+`src/features/recommendations/weights.ts` — `DEFAULT_WEIGHTS` (personal fit
+40%, season/date fit 20%, travel quality 15%, uniqueness 10%, budget fit
+5%, festival/event fit 5%, popularity 5%) matches the spec's own §18
+illustrative table exactly; `DEFAULT_PERSONAL_FIT_WEIGHTS` (interest 40%,
+travel style 25%, crowd 20%, duration 15%) is this codebase's own choice
+where the spec only named the four inputs without sub-weights — documented
+as such, not presented as spec-derived. `DEFAULT_FESTIVAL_WEIGHTS` mirrors
+the same shape with `dateFit`/`destinationFit` replacing `budgetFit`/
+`festivalEventFit` (festivals have no cost-per-day field to compare a
+budget against). All weights live in one file, imported everywhere they're
+used — spec §39's "do not hardcode weights in multiple components."
+
+### 5. Explanation engine
+
+`src/features/recommendations/explain.ts` — ordered threshold checks
+against the same signals the score was built from ("Matches your
+interests" when `interest > 0.65`, "Fits your budget" when `budget >= 0.9`,
+etc.), capped at 4, with a generic non-empty fallback ("Worth exploring")
+so a low-signal match never shows zero reasons. Deterministic and
+rule-based throughout — no LLM call anywhere in the recommendation path,
+per the spec's explicit prohibition.
+
+### 6. Diversity logic
+
+`src/features/recommendations/diversity.ts` — greedy top-N selection: highest
+score first, soft cap of 2 per category and per geography (a destination's
+state, resolved from `Location.parentId`), with a second relaxed pass that
+drops the caps only if the first pass couldn't fill all N slots — so a
+narrow-interest user still gets 5 results (spec §28: "do not force
+diversity when the user's interests are extremely narrow") instead of
+fewer. Also the one place duplicates are dropped (spec §30).
+
+### 7. Anonymous fallback logic
+
+`hasPersonalizationSignal(context)` is the single gate: false for a truly
+anonymous visitor (or a signed-in user with no `UserPreference` row) routes
+every recommend* function through the *existing* Phase 5/6 ranked discovery
+feed, wrapped with honest reasons ("Great time of year to visit", "A
+traveller favourite") and `matchPercent: null` — never a fabricated
+percentage, never "Personalized for you" copy for someone the system knows
+nothing about (spec §24/§45). This is a real, verified fallback, not a
+theoretical one — the Explore page's default (pre-onboarding) state was
+screenshotted mid-session showing exactly this.
+
+### 8. Guest preference persistence
+
+`src/lib/guest/store.ts`'s `GuestState` gained a `preferences` field
+(`setPreferences()`/cleared on `clear()`), written by `OnboardingLauncher`
+for anonymous visitors and read by `RecommendationRail` on every fetch — so
+completing onboarding from Explore's own inline CTA re-personalizes the
+rail immediately, no reload, verified via headless browser. On sign-in,
+`mergeGuestDataIntoAccount()` (`src/lib/guest/merge.ts`) imports the guest
+snapshot into a real `UserPreference` row — but **only if the account has
+none yet**: account data is authoritative, so a stale guest snapshot from
+this browser can never silently overwrite preferences the user already set
+post-sign-in ("use a clear merge strategy and do not silently destroy
+information," spec §43). The actual sign-in-time *trigger* for this merge
+(calling `/api/guest/merge` right after auth) is out of this phase's scope
+by design — Phase 8 is literally titled "Guest-to-Account Sync."
+
+### 9. Account preference persistence
+
+`GET`/`PUT /api/preferences` — signed-in only, backed by
+`getPreference()`/`upsertPreference()` (`src/features/users/service.ts`).
+`/profile` server-renders the current preference summary and an
+edit/set-preferences entry point (`PreferencesEditor`, a thin Client
+Component — see the Server→Client bug below for why it can't be inlined
+directly into the page).
+
+### 10. Context-aware recommendation architecture
+
+`recommendNearby()` reuses the existing geographic nearby queries
+(`getNearbyToFestival`/`getNearbyToDestination`, Phase 4/5) rather than a
+new geo system, then — only when the viewer has real preference signals —
+re-scores that small nearby set with the same `scoreDestination`/
+`scoreFestival` functions and attaches reasons. Building this exposed a
+real, pre-existing asymmetry: `getNearbyToDestination()` only ever queried
+other *destinations*, never nearby festivals (unlike its festival-side
+counterpart, which already queried both) — so viewing a destination could
+never surface a nearby festival no matter how close. Fixed by adding a
+small `nearbyFestivalsForPoint()` helper inside the new recommendations
+module itself (not by widening `getNearbyToDestination()`'s contract, which
+other call sites depend on as a plain array) — verified end-to-end with
+Dzükou Valley ↔ Hornbill Festival (12km apart in the seed data), which now
+shows a 61%-match "Hornbill Festival" card under "Recommended Nearby."
+Currently authenticated-only (see "Known limitations").
+
+### 11. Caching strategy
+
+Generic (non-personalized) recommendations ride on the same DB-query-level
+performance the existing discovery feeds already have (indexed, bounded
+result sets) — no new cache layer, which would be over-engineering for V1
+volume. Personalized recommendations are deliberately **never**
+server-rendered into a cacheable page response: Explore's recommendation
+rail is a client component that POSTs to `/api/recommendations/destinations`
+after mount specifically so nothing private ends up in a publicly-cacheable
+HTML response (spec §51/§52 — "do not cache private recommendations in
+publicly accessible caches," "personalized recommendations should not
+create indexable pages"). `/search`-style `robots: noindex` wasn't needed
+since no new page's *URL* carries personalization state.
+
+### 12. Analytics events
+
+Three new `AnalyticsEventType` values (`ONBOARDING_INTERACTION`,
+`PREFERENCE_UPDATED`, `RECOMMENDATION_VIEWED`; migration
+`20260831090000_personalization_preferences`). `ONBOARDING_INTERACTION` is
+one generic type disambiguated by `metadata.action` (`started`, `completed`
+— with a `partial` flag for early finishes, `skipped`), the same shape
+Phase 6 established. Recommendation clicks reuse the existing
+`RECOMMENDATION_CLICK`; recommendation saves/add-to-trip reuse the existing
+`SAVE`/`ADD_TO_TRIP` with a new optional `metadata.source` (added to
+`SaveButton`/`AddToTripButton`/`useSavedState`) rather than inventing
+`RECOMMENDATION_SAVED`/`RECOMMENDATION_ADDED_TO_TRIP` variants for the same
+underlying action. "Recommendation dismissed" (spec's own "if implemented")
+and "match score interaction" (spec's own "if useful") were both left
+unimplemented — neither hedge phrase reads as a hard requirement, and
+dismissal specifically would need real UI (undo, persistence) disproportionate
+to a V1 nice-to-have.
+
+### Files created/modified
+
+New: `src/features/recommendations/` (`types`, `weights`, `scoring`,
+`explain`, `diversity`, `context`, `service`, `index`),
+`src/components/onboarding/` (`OnboardingWizard`, `OnboardingLauncher`,
+`types`, `index`), `src/components/recommendations/` (`RecommendationCard`,
+`RecommendationRail`, `index`), `src/components/ui/Slider.tsx`,
+`src/lib/preferences/budget.ts`, `src/app/api/preferences/route.ts`,
+`src/app/api/recommendations/destinations/route.ts`,
+`src/app/profile/PreferencesEditor.tsx`, `src/lib/validation/{preferences,
+recommendations}.ts`, `prisma/migrations/20260831090000_
+personalization_preferences/`. Rewritten: `src/app/profile/page.tsx` (real
+preference summary, replacing the Phase 1 stub). Modified:
+`prisma/schema.prisma`, `src/features/users/{service,types}.ts`
+(`listInterestTags`, `budgetAmount`/numeric `crowdPreference`), `src/lib/
+guest/{types,store,merge}.ts` (guest preferences), `src/lib/validation/
+{guest,map}.ts` (new schemas/event types), `src/app/explore/page.tsx`
+(the old static "Best Places This Month" section replaced by
+`RecommendationRail`, which subsumes it — personalized when possible,
+identical anonymous ranking otherwise), `src/app/{destinations,festivals}/
+[slug]/page.tsx` (personalized "Recommended Nearby" for signed-in
+visitors), `src/config/nav.ts` unchanged. Deleted: `src/lib/recommendations/`
+— the Phase 1 scaffold stub (unused by any real code, and broken outright
+by the `CrowdPreference` enum removal) is fully superseded by
+`src/features/recommendations/`.
+
+### Two real bugs found and fixed this phase
+
+1. **A Server Component passed a function prop to a Client Component.**
+   `/profile`'s server-rendered page crashed for every signed-in visitor
+   ("Functions cannot be passed directly to Client Components") because it
+   passed `OnboardingLauncher` a `renderTrigger` function directly. Neither
+   `tsc` nor `next build` catches this — only the server's runtime log and
+   an actual signed-in page load did. Fixed with a thin Client Component
+   wrapper (`PreferencesEditor`) that builds the function client-side
+   instead. Full writeup in `docs/architecture.md`.
+2. **New analytics event types reached the Prisma enum but not the Zod
+   validation schema.** `RECOMMENDATION_VIEWED` (and its two siblings) were
+   added to `schema.prisma` and the migration but not to
+   `analyticsEventSchema` in `src/lib/validation/map.ts` — the separate list
+   `/api/analytics/track` actually checks. Every view of the recommendation
+   rail silently 400'd on its own tracking call. Caught by logging every
+   failed network response during headless-browser verification, not by
+   any type check. Same failure shape exists for Phase 6's four event types
+   (added correctly, together, that time) — noted as a "grep for
+   `analyticsEventSchema` when adding an event type" discipline point.
+
+### Tests/checks performed
+
+- `npm run typecheck`, `npm run lint`, `npm run build` — all clean.
+- Real end-to-end verification via headless Chromium against the
+  **production build**, including a from-scratch authenticated session
+  (a real `User` + database `Session` row created directly against the dev
+  Postgres instance, with its `sessionToken` set as the browser's Auth.js
+  cookie — since this environment has no working OAuth/SMTP credentials to
+  drive a real sign-in flow): guest onboarding via Explore's inline CTA
+  (rail goes from anonymous "Best This Month" to "Recommended for You" with
+  real match percentages, no reload); the full 7-step wizard via
+  `/profile` for a signed-in user (preferences actually persisted and
+  redisplayed after `router.refresh()`); the signed-in Explore rail
+  (personalized, match badges visible); context-aware "Recommended Nearby"
+  on both a destination page (Dzükou Valley) and a festival page (Hornbill
+  Festival) for the same signed-in, preferences-set user; the anonymous/
+  cold-start Explore state (no match badges, honest reasons, working
+  onboarding CTA); and a broad regression sweep (home, map, festivals/
+  destinations listings, hidden-india, calendar, both detail pages, mobile
+  viewports for explore/profile/calendar) — zero console errors or failed
+  requests anywhere in the final run.
+
+### Known limitations
+
+- Context-aware "Recommended Nearby" personalizes for signed-in visitors
+  only — guests keep the unchanged plain nearby list, since the server
+  can't see a guest's client-side preferences on a server-rendered detail
+  page without adding a client-fetch waterfall there too (see
+  `docs/architecture.md`'s "scope trims" section).
+- Map integration (spec §32) wasn't wired this phase — a documented,
+  deliberate trim, not an oversight (see `docs/architecture.md`).
+- Explore's visible "Top 5" rail is destinations-only; `recommendFestivals`
+  is real and exercised via `recommendNearby`, but doesn't have its own
+  homepage-style rail yet.
+- Duration fit is a coarse heuristic (no per-destination "typical visit
+  length" field exists to score against) — documented in `scoring.ts`
+  rather than presented as more precise than it is.
+- "Recommendation dismissed" and "match score interaction" analytics were
+  not implemented — both were explicitly hedged as optional in the spec.
+- No automated tests — same gap noted in every prior phase.
+
+---
+
+<!-- Phase 8+ reports appended below as each phase completes. -->

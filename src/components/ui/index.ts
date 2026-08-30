@@ -16,6 +16,7 @@ export * from "./ResponsiveImage";
 export * from "./EmptyState";
 export * from "./ErrorState";
 export * from "./SearchInput";
+export * from "./Slider";
 export * from "./SearchOverlay";
 export * from "./SearchResultGroup";
 export * from "./Disclosure";

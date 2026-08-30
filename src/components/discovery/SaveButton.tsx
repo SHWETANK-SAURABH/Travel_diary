@@ -5,8 +5,8 @@ import { Button, type ButtonProps } from "@/components/ui";
 import { useSavedState } from "./useSavedState";
 import type { DiscoveryKind } from "./contentKind";
 
-export function SaveButton({ kind, id, size = "md" }: { kind: DiscoveryKind; id: string; size?: ButtonProps["size"] }) {
-  const { saved, toggle } = useSavedState(kind, id);
+export function SaveButton({ kind, id, size = "md", source }: { kind: DiscoveryKind; id: string; size?: ButtonProps["size"]; source?: string }) {
+  const { saved, toggle } = useSavedState(kind, id, source);
 
   return (
     <Button size={size} variant={saved ? "secondary" : "outline"} onClick={toggle}>

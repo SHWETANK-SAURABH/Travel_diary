@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { deriveBudgetLevel } from "@/lib/preferences/budget";
 import type { GuestState } from "./types";
 
 /**
@@ -16,6 +17,32 @@ import type { GuestState } from "./types";
  */
 export async function mergeGuestDataIntoAccount(userId: string, guestState: GuestState) {
   await db.$transaction(async (tx) => {
+    // Preferences: account data is authoritative. If the account already has
+    // a UserPreference row (set post-sign-in, or from an earlier merge), a
+    // guest snapshot from this browser must never silently overwrite it —
+    // "use a clear merge strategy and do not silently destroy information."
+    // Only import the guest snapshot when the account has no preferences at all.
+    if (guestState.preferences) {
+      const existing = await tx.userPreference.findUnique({ where: { userId }, select: { id: true } });
+      if (!existing) {
+        const p = guestState.preferences;
+        await tx.userPreference.create({
+          data: {
+            userId,
+            travelDateStart: p.travelDateStart ? new Date(p.travelDateStart) : undefined,
+            travelDateEnd: p.travelDateEnd ? new Date(p.travelDateEnd) : undefined,
+            durationDays: p.durationDays,
+            travellerCount: p.travellerCount,
+            budgetAmount: p.budgetAmount,
+            budgetLevel: deriveBudgetLevel(p.budgetAmount),
+            travelStyle: p.travelStyle,
+            crowdPreference: p.crowdPreference,
+            interests: p.interestTagIds?.length ? { connect: p.interestTagIds.map((id) => ({ id })) } : undefined,
+          },
+        });
+      }
+    }
+
     for (const item of guestState.savedItems) {
       await tx.savedContent.upsert({
         where: {

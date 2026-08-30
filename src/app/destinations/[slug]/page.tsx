@@ -4,9 +4,13 @@ import { notFound } from "next/navigation";
 import { getDestinationBySlug, getDestinationMedia, getNearbyToDestination } from "@/features/destinations/service";
 import { formatMonthRange } from "@/features/destinations/seasonal";
 import { trackDestinationView } from "@/features/analytics/service";
+import { auth } from "@/lib/auth";
+import { getPreference } from "@/features/users/service";
+import { recommendNearby, preferenceToContext, hasPersonalizationSignal } from "@/features/recommendations";
 import { Container } from "@/components/layout";
 import { Badge, Disclosure, ResponsiveImage, Button, Gallery } from "@/components/ui";
 import { SaveButton, VisitedButton, AddToTripButton, ShareButton, NearbyDiscovery } from "@/components/discovery";
+import { RecommendationCard } from "@/components/recommendations";
 import { BudgetBadge } from "@/components/destinations";
 import { siteConfig } from "@/config/site";
 
@@ -43,10 +47,27 @@ export default async function DestinationDetailPage({ params }: PageProps) {
   if (!destination) notFound();
   void trackDestinationView(destination.id);
 
-  const [media, nearbyDestinations] = await Promise.all([
+  const [media, nearbyDestinations, session] = await Promise.all([
     getDestinationMedia(destination.id),
     getNearbyToDestination(destination),
+    auth(),
   ]);
+
+  // Context-aware "you're viewing this destination" recommendations (spec
+  // §31) — authenticated visitors with real preferences see a personalized
+  // upgrade of the plain nearby list; everyone else (including guests, whose
+  // preferences live client-side only) sees the unchanged Phase 4/5 list.
+  let personalizedNearby: Awaited<ReturnType<typeof recommendNearby>> | null = null;
+  if (session) {
+    const preference = await getPreference(session.user.id);
+    const context = preferenceToContext(preference, { excludeId: destination.id });
+    if (hasPersonalizationSignal(context)) {
+      personalizedNearby = await recommendNearby(
+        { kind: "destination", id: destination.id, latitude: destination.latitude, longitude: destination.longitude },
+        context
+      );
+    }
+  }
 
   const heroImage = media[0];
   const galleryImages = media.map((m) => ({ url: m.url, altText: m.altText }));
@@ -222,10 +243,45 @@ export default async function DestinationDetailPage({ params }: PageProps) {
             </Disclosure>
           )}
 
-          {nearbyDestinations.length > 0 && (
-            <Disclosure title="Nearby Places" defaultOpen>
-              <NearbyDiscovery festivals={[]} destinations={nearbyDestinations} />
+          {personalizedNearby && (personalizedNearby.destinations.length > 0 || personalizedNearby.festivals.length > 0) ? (
+            <Disclosure title="Recommended Nearby" defaultOpen>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                {personalizedNearby.destinations.map((rec) => (
+                  <RecommendationCard
+                    key={rec.item.id}
+                    kind="destination"
+                    id={rec.item.id}
+                    slug={rec.item.slug}
+                    name={rec.item.name}
+                    locationName={rec.item.location.name}
+                    imageUrl={rec.item.imageUrl}
+                    matchPercent={rec.matchPercent}
+                    reasons={rec.reasons}
+                    context="destination_detail_nearby"
+                  />
+                ))}
+                {personalizedNearby.festivals.map((rec) => (
+                  <RecommendationCard
+                    key={rec.item.id}
+                    kind="festival"
+                    id={rec.item.id}
+                    slug={rec.item.slug}
+                    name={rec.item.name}
+                    locationName={rec.item.location.name}
+                    imageUrl={rec.item.imageUrl}
+                    matchPercent={rec.matchPercent}
+                    reasons={rec.reasons}
+                    context="destination_detail_nearby"
+                  />
+                ))}
+              </div>
             </Disclosure>
+          ) : (
+            nearbyDestinations.length > 0 && (
+              <Disclosure title="Nearby Places" defaultOpen>
+                <NearbyDiscovery festivals={[]} destinations={nearbyDestinations} />
+              </Disclosure>
+            )
           )}
         </div>
       </Container>

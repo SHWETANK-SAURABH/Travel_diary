@@ -2,6 +2,7 @@ import { db } from "@/lib/db";
 import type { ContentType } from "@prisma/client";
 import { mergeGuestDataIntoAccount } from "@/lib/guest/merge";
 import type { GuestState } from "@/lib/guest/types";
+import { deriveBudgetLevel } from "@/lib/preferences/budget";
 import type { UpdatePreferenceInput } from "./types";
 
 // All preference fields are optional per the product spec — never require
@@ -10,7 +11,14 @@ export async function getPreference(userId: string) {
   return db.userPreference.findUnique({ where: { userId }, include: { interests: true } });
 }
 
+/** The onboarding wizard's interest chips — DB-backed taxonomy, never hardcoded (see docs/database.md). */
+export async function listInterestTags() {
+  return db.tag.findMany({ where: { category: "INTEREST" }, orderBy: { name: "asc" } });
+}
+
 export async function upsertPreference(userId: string, input: UpdatePreferenceInput) {
+  const budgetLevel = deriveBudgetLevel(input.budgetAmount);
+
   return db.userPreference.upsert({
     where: { userId },
     create: {
@@ -19,7 +27,8 @@ export async function upsertPreference(userId: string, input: UpdatePreferenceIn
       travelDateEnd: input.travelDateEnd,
       durationDays: input.durationDays,
       travellerCount: input.travellerCount,
-      budgetLevel: input.budgetLevel,
+      budgetAmount: input.budgetAmount,
+      budgetLevel,
       travelStyle: input.travelStyle,
       crowdPreference: input.crowdPreference,
       interests: input.interestTagIds ? { connect: input.interestTagIds.map((id) => ({ id })) } : undefined,
@@ -29,11 +38,13 @@ export async function upsertPreference(userId: string, input: UpdatePreferenceIn
       travelDateEnd: input.travelDateEnd,
       durationDays: input.durationDays,
       travellerCount: input.travellerCount,
-      budgetLevel: input.budgetLevel,
+      budgetAmount: input.budgetAmount,
+      budgetLevel,
       travelStyle: input.travelStyle,
       crowdPreference: input.crowdPreference,
       interests: input.interestTagIds ? { set: input.interestTagIds.map((id) => ({ id })) } : undefined,
     },
+    include: { interests: true },
   });
 }
 
