@@ -277,3 +277,103 @@ only reliably matches the rendered route on a full page load.
 - **Location hierarchy** is one self-referencing table (`type` +
   `parentId`) rather than separate `Country`/`State`/`City` tables, so
   adding a new administrative level never requires a migration.
+
+## Discovery context is the URL, not a store (Phase 6)
+
+Phase 6 asked for a "shared discovery context" (month + geography) that
+survives navigation between Search, Calendar, Map, Festivals, Destinations
+and Explore. Every one of those pages already treated `?month=`/`?state=`
+in its own URL as the source of truth (Phase 3's map, Phase 4/5's
+`/festivals`/`/destinations`) — so rather than introduce a Zustand store
+duplicating that state, `src/features/discovery/context.ts` is just a set of
+pure `xHref(ctx)` functions that build one page's URL from another's
+context. The "shared context" is the URL itself; this module is only the
+one place that assembles cross-page links out of it, so `/calendar` and
+`/map` don't each hand-roll their own query-string logic. Per the spec's own
+"do not put every UI state into global state" — this was a case for less
+state, not a new store.
+
+## Calendar ↔ Map needed a real bug fix, not just new pages
+
+Making "Explore October on Map" (Calendar → Map) actually land on October
+exposed a latent gap in `MapPageClient.tsx`'s URL-state parsing: the old
+`parseUrlState` returned a single object and required `lat`+`lng`+`zoom` to
+all be present before it would read `month` *at all* — so a link with only
+`?month=10` (no viewport, since Calendar has no map camera to hand off)
+silently fell back to the current month instead. Fixed by splitting it into
+two independent parsers, `parseViewState` (lat/lng/zoom, still requires all
+three) and `parseMonthParam` (reads `month` regardless of whether a
+viewport is present, returning `undefined` — not `null` — when the URL has
+no `month` key at all, so the effect that applies it doesn't clobber the
+default). The reverse direction (Map → Calendar, a "View October Festivals"
+link next to `MonthSelector`) needed no equivalent fix since `/calendar`
+already treated `?month=` as authoritative on its own.
+
+## Universal search: tiered relevance + pg_trgm typo tolerance, not a search engine
+
+`src/features/search/service.ts` fetches a superset per content type (name
+OR location-name OR tag OR description match, via one `OR` clause each —
+the trigram-indexed `name` columns from the `search_and_geo_indexes`
+migration keep this fast without a dedicated index), then ranks in JS with
+a transparent tier: exact/prefix/substring name match ranks above a
+location-name match, which ranks above any other OR-clause match (tag or
+description — deliberately not distinguished, to avoid a second query just
+to attribute *which* field matched), with a small popularity/editorial
+bonus layered on top — the same "transparent weighted sum" shape as the
+festival/destination ranking heuristics, not a black box.
+
+Typo tolerance ("Munnar" should still work for "Munaar") reuses
+infrastructure that already existed rather than adding a new one: when a
+content type's plain match comes back empty, `fuzzyMatchIds()` runs a
+`similarity(name, query) > 0.25` query via `pg_trgm` (already enabled in the
+`init` migration, already indexed) and re-selects full rows for whatever it
+finds, in similarity order. This only fires per-content-type on zero
+results, so a query that already matches normally never pays for the
+fallback. Deliberately not a spelling-correction system — the spec's own
+"do not build a complex AI spelling correction system."
+
+## Two small primitives replace ad hoc click tracking: `TrackedLink`, `TrackedCardWrapper`
+
+Search result clicks, Calendar's "festival clicked"/"map CTA clicked", and
+Explore's per-section CTAs all needed the same shape: fire one analytics
+event, then navigate. Rather than a bespoke `onClick` at every call site,
+`src/components/discovery/TrackedLink.tsx` wraps `next/link` with an
+`event` prop, and `TrackedCardWrapper.tsx` wraps a plain click-analytics
+`div` around a card whose only interactive surface is its own internal
+`Link` (`FestivalCard`/`DestinationCard`, so they don't need
+tracking-specific variants). Both were written once Calendar *and* Explore
+needed the identical pattern — the same "generalize on the second real
+consumer" rule Phase 4/5 used for `src/components/discovery`.
+
+## `useDebouncedValue`: extracted, not invented
+
+The map's search box (Phase 3) already debounced its query with an inline
+`useEffect`+`setTimeout`. The header's universal search overlay needed the
+same behavior, so the timer moved to `src/lib/hooks/useDebouncedValue.ts`
+and `MapSearch.tsx` was refactored to use it too — a second consumer
+appearing is what triggered the extraction, not a preemptive "shared hooks"
+folder. One non-obvious wrinkle both consumers share: the "query too short,
+clear results" branch must never call `setState` synchronously in the
+effect body (React's `react-hooks/set-state-in-effect` lint rule, first hit
+in Phase 3's original map search). The fix here is structural rather than
+an `eslint-disable`: the effect simply returns early below the minimum
+length without touching state, and the *render* gates on the trimmed
+query's length instead — so the only `setState` call left in either effect
+is inside the fetch's `.then()`, and stale `results` state is simply never
+displayed rather than needing to be cleared.
+
+## Analytics event types added, reusing the `metadata.action` pattern
+
+Four new `AnalyticsEventType` values (`SEARCH_OPENED`,
+`SEARCH_RESULT_CLICK`, `CALENDAR_INTERACTION`, `EXPLORE_INTERACTION`) cover
+the spec's search/calendar/explore analytics — but `CALENDAR_INTERACTION`
+and `EXPLORE_INTERACTION` are each one generic type distinguished by
+`metadata.action` (`"month_selected"`, `"map_cta_clicked"`,
+`"festival_clicked"`, `"discovery_clicked"`, ...), the same shape
+`MAP_INTERACTION` already used in Phase 3, rather than a dedicated enum
+value per distinct action. "Search refinement" (spec's search analytics
+list) is deliberately *not* a separate tracked event — `AnalyticsEvent` has
+no session concept, so a second `SEARCH_QUERY` close in time to a first one
+is already a refinement in the data; adding an event just to restate that
+would be the "excessive analytics events that provide no meaningful
+insight" the spec warns against.

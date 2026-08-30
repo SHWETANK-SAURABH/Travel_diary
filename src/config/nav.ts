@@ -21,6 +21,7 @@ export const primaryNav: NavItem[] = [
 
 /** Content of the Explore ▾ dropdown (desktop) and the Explore bottom sheet (mobile). */
 export const exploreNav: ExploreNavItem[] = [
+  { label: "Explore", href: "/explore" },
   { label: "Festivals", href: "/festivals" },
   { label: "Destinations", href: "/destinations" },
   { label: "Hidden India", href: "/hidden-india" },

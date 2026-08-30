@@ -99,6 +99,21 @@ export async function getFestivalDiscoveryFeed(filters: FestivalDiscoveryFilters
 
 export type FestivalDiscoveryItem = Awaited<ReturnType<typeof getFestivalDiscoveryFeed>>[number];
 
+/**
+ * The two feed slices Calendar and Explore both need — filtering the same
+ * ranked discovery feed rather than a second query/status model, per the
+ * spec's "use the existing festival status system."
+ */
+export async function getHappeningNowFestivals(limit = 6) {
+  const feed = await getFestivalDiscoveryFeed();
+  return feed.filter((f) => f.status === "HAPPENING_NOW").slice(0, limit);
+}
+
+export async function getUpcomingFestivals(limit = 6) {
+  const feed = await getFestivalDiscoveryFeed();
+  return feed.filter((f) => f.status === "UPCOMING").slice(0, limit);
+}
+
 export function pickRelevantOccurrence(occurrences: OccurrenceLike[]): OccurrenceLike | null {
   if (occurrences.length === 0) return null;
   const now = new Date();

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { SearchInput } from "@/components/ui";
+import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import type { MapSearchResult } from "@/features/map/types";
 
 export interface MapSearchProps {
@@ -18,27 +19,24 @@ const KIND_LABEL: Record<MapSearchResult["kind"], string> = {
 /** Map-specific search — separate from the site's universal search (src/features/search); every result here has coordinates so the map can fly to it. */
 export function MapSearch({ onSelect }: MapSearchProps) {
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebouncedValue(query, 250);
+  const trimmedQuery = debouncedQuery.trim();
   const [results, setResults] = useState<MapSearchResult[]>([]);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Below the minimum length, render-time gating (see `trimmedQuery.length >= 2`
+    // below) hides whatever `results` still holds — no need to clear it here,
+    // which keeps this effect's only setState call inside the fetch's `.then()`.
+    if (trimmedQuery.length < 2) return;
     const controller = new AbortController();
-    const timer = setTimeout(() => {
-      if (query.trim().length < 2) {
-        setResults([]);
-        return;
-      }
-      fetch(`/api/map/search?q=${encodeURIComponent(query)}`, { signal: controller.signal })
-        .then((res) => res.json())
-        .then((data) => setResults(data.results ?? []))
-        .catch(() => {});
-    }, 250);
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
-  }, [query]);
+    fetch(`/api/map/search?q=${encodeURIComponent(trimmedQuery)}`, { signal: controller.signal })
+      .then((res) => res.json())
+      .then((data) => setResults(data.results ?? []))
+      .catch(() => {});
+    return () => controller.abort();
+  }, [trimmedQuery]);
 
   useEffect(() => {
     function handlePointerDown(e: PointerEvent) {
@@ -64,7 +62,7 @@ export function MapSearch({ onSelect }: MapSearchProps) {
         }}
       />
 
-      {open && results.length > 0 && (
+      {open && trimmedQuery.length >= 2 && results.length > 0 && (
         <ul className="absolute top-full z-10 mt-1 w-full rounded-md border border-border bg-paper-raised py-1 shadow-panel">
           {results.map((result) => (
             <li key={`${result.kind}-${result.id}`}>

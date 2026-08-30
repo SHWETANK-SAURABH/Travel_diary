@@ -215,6 +215,20 @@ public users."
   a full scan.
 - GIST indexes on the PostGIS `geo` columns, same migration — powers
   `ST_DWithin` radius queries.
+- `pg_trgm`'s `similarity()` function (same extension/indexes as above)
+  additionally backs the universal search's typo-tolerant fallback — see
+  `fuzzyMatchIds()` in `src/features/search/service.ts`.
+
+## Analytics event types (Phase 6 additions)
+
+`AnalyticsEventType` gained `SEARCH_OPENED`, `SEARCH_RESULT_CLICK`,
+`CALENDAR_INTERACTION`, and `EXPLORE_INTERACTION` (migration
+`20260830140000_search_calendar_explore_analytics`) for the Phase 6 search/
+calendar/explore analytics requirements. `CALENDAR_INTERACTION` and
+`EXPLORE_INTERACTION` are each one generic type disambiguated by
+`metadata.action` (`"month_selected"`, `"map_cta_clicked"`,
+`"festival_clicked"`, `"discovery_clicked"`, ...) rather than a dedicated
+enum value per action — the same shape `MAP_INTERACTION` already used.
 
 ## Seed data
 

@@ -19,14 +19,15 @@ import {
 import type { BoundingBox } from "@/lib/geo";
 import type { MapDiscovery, MapSearchResult } from "@/features/map/types";
 import { trackClientEvent } from "@/lib/analytics/client";
+import { TrackedLink } from "@/components/discovery";
+import { calendarHref, monthName } from "@/features/discovery/context";
 
 const CURRENT_MONTH = new Date().getMonth() + 1;
 
-interface MapUrlState {
+interface MapViewState {
   lat: number;
   lng: number;
   zoom: number;
-  month: number | null;
 }
 
 /**
@@ -40,18 +41,25 @@ interface MapUrlState {
  * later was correct. `useSearchParams()` is kept in sync with Next's
  * router instead of the raw browser API, so it doesn't have this race.
  */
-function parseUrlState(params: URLSearchParams): MapUrlState | null {
+function parseViewState(params: URLSearchParams): MapViewState | null {
   const lat = params.get("lat");
   const lng = params.get("lng");
   const zoom = params.get("zoom");
-  const month = params.get("month");
   if (!lat || !lng || !zoom) return null;
-  return {
-    lat: Number(lat),
-    lng: Number(lng),
-    zoom: Number(zoom),
-    month: month === "all" ? null : month ? Number(month) : CURRENT_MONTH,
-  };
+  return { lat: Number(lat), lng: Number(lng), zoom: Number(zoom) };
+}
+
+/**
+ * Read independently of the viewport (lat/lng/zoom) — a Calendar "Explore
+ * October on Map" link only sets `?month=`, with no viewport of its own, and
+ * should still land on October rather than silently falling back to the
+ * current month. Returns `undefined` when the URL has no `month` param at
+ * all (so the caller doesn't clobber the default), `null` for "all year".
+ */
+function parseMonthParam(params: URLSearchParams): number | null | undefined {
+  const month = params.get("month");
+  if (month === null) return undefined;
+  return month === "all" ? null : Number(month);
 }
 
 /**
@@ -77,8 +85,9 @@ export function MapPageClient() {
   const searchParams = useSearchParams();
   // Recomputes only when Next's router actually navigates here with new
   // params (not on every writeUrlState rewrite above) — see the comment
-  // on parseUrlState.
-  const initialUrlState = useMemo(() => parseUrlState(searchParams), [searchParams]);
+  // on parseViewState.
+  const initialUrlState = useMemo(() => parseViewState(searchParams), [searchParams]);
+  const monthParam = useMemo(() => parseMonthParam(searchParams), [searchParams]);
 
   // `month` still starts at the server-safe default and gets corrected
   // once, client-side, in the effect below — the server render has no
@@ -109,8 +118,8 @@ export function MapPageClient() {
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- post-hydration correction, see the comment on `month` above
-    if (initialUrlState) setMonth(initialUrlState.month);
-  }, [initialUrlState]);
+    if (monthParam !== undefined) setMonth(monthParam);
+  }, [monthParam]);
 
   const handleViewportChange = useCallback(
     (nextBox: BoundingBox, nextZoom: number, nextCenter: { lat: number; lng: number }) => {
@@ -190,7 +199,18 @@ export function MapPageClient() {
         <div className="flex flex-col gap-2">
           <MapSearch onSelect={handleSearchSelect} />
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <MonthSelector value={month} onChange={handleMonthChange} />
+            <div className="flex flex-wrap items-center gap-2">
+              <MonthSelector value={month} onChange={handleMonthChange} />
+              {month && (
+                <TrackedLink
+                  href={calendarHref({ month })}
+                  event={{ type: "CALENDAR_INTERACTION", metadata: { action: "map_cta_clicked", month } }}
+                  className="text-caption whitespace-nowrap text-marigold-600 hover:underline"
+                >
+                  View {monthName(month)} Festivals →
+                </TrackedLink>
+              )}
+            </div>
             <LayerControls active={activeLayers} onToggle={handleLayerToggle} />
           </div>
         </div>

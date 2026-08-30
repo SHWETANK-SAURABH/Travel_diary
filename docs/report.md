@@ -753,4 +753,199 @@ Beach destination, plus a real idempotency fix — see below).
 
 ---
 
-<!-- Phase 6+ reports appended below as each phase completes. -->
+## Phase 6 — Search, Calendar & Unified Seasonal Discovery
+
+**Status: complete.**
+
+### Summary
+
+Built the discovery layer connecting Search, Calendar, Map, Festivals,
+Destinations and Explore around "where + when + what": a real universal
+search (categorized results, tiered relevance ranking, pg_trgm typo
+tolerance, empty-state suggestions) wired into both the header overlay and
+`/search`; a real `/calendar` (Happening Now / Upcoming / browse-by-month,
+each month showing its festivals plus a seasonal destination rail); a real
+`/explore` gateway page; and a bidirectional Calendar ↔ Map month link,
+which required a genuine bug fix in the map's URL-state parsing, not just
+new UI. "Discovery context" (month + geography) stayed the URL rather than
+becoming a new client store — every page already treated it that way.
+
+### 1. Search architecture
+
+`src/features/search/service.ts`'s `search()` fetches a superset per
+content type (name OR location-name OR tag OR description match — one `OR`
+clause, using the trigram-indexed `name`/description columns from the
+`search_and_geo_indexes` migration) across Festival, Destination,
+Experience, Food, Location (state/city) and Event, then ranks and slices in
+JS. Two new endpoints: `/api/search/suggest` (debounced live results for
+the header overlay) and `/api/search/popular` (lazy empty-state fallback —
+only fetched once a query has actually come up empty). `/search` calls the
+service directly (already server-rendered); the overlay hits the same
+`search()` logic through the API route, so ranking/tracking behavior is
+identical from both entry points.
+
+### 2. Search ranking implementation
+
+A transparent weighted tier, not alphabetical or a black box: exact/prefix/
+substring name match (100/80/55) ranks above a location-name match (40),
+which ranks above any other OR-clause match — tag or description, folded
+together rather than a second query just to attribute which field matched
+— with a small popularity/editorial bonus (+10 featured, +3 `POPULAR`) on
+top. Same "transparent weighted sum" shape as the festival/destination
+ranking heuristics from Phase 4/5.
+
+### 3. Search indexes used
+
+The existing `pg_trgm` GIN trigram indexes on `name` (all content tables,
+`search_and_geo_indexes` migration) now serve two purposes: `ILIKE`
+substring matching (as before) and, new this phase, `similarity()`-ranked
+typo-tolerant fallback (`fuzzyMatchIds()`) — fired per content type only
+when the plain match returns zero rows, so a normal query never pays the
+extra cost. Threshold 0.25, capped at 5 fuzzy candidates per type.
+
+### 4. Calendar architecture
+
+`/calendar` has two modes off one `?month=` param: no month selected shows
+"Happening Now" + "Upcoming" (new `getHappeningNowFestivals()`/
+`getUpcomingFestivals()` in `src/features/festivals/service.ts` — thin
+filters over the existing `getFestivalDiscoveryFeed()`, not a second status
+model); a month selected shows that month's festivals plus a "Best Places
+to Visit in {Month}" rail from `getDestinationDiscoveryFeed({ month })`
+(Phase 5's seasonal ranking, unmodified). Month navigation reuses
+`MonthFilterLinks` (`basePath="/calendar"`) — no new month-picker component.
+
+### 5. Month/discovery context implementation
+
+`src/features/discovery/context.ts` — pure `calendarHref`/`mapHref`/
+`festivalsHref`/`destinationsHref` functions building one page's URL out of
+another's `{month, stateSlug}`. Not a store: every consuming page already
+reads `?month=`/`?state=` from its own URL as the source of truth (Phase
+3's map, Phase 4/5's listing pages), so the "shared context" is the URL —
+this module is only the one place that assembles cross-page links out of
+it, per the spec's "do not put every UI state into global state."
+
+### 6. Happening Now logic
+
+Unchanged from Phase 4/6 — `resolveFestivalStatus()` is still the one
+status model. New: `getHappeningNowFestivals(limit)` in the festivals
+service, a thin `.filter(status === "HAPPENING_NOW")` over the ranked
+discovery feed, shared by Calendar and Explore instead of each page
+re-deriving it.
+
+### 7. Seasonal destination ranking
+
+Unmodified — Phase 5's `rankDestinations()`/`getDestinationDiscoveryFeed({
+month })` is reused as-is by both Calendar's per-month rail and Explore's
+"Best Places to Visit This Month" section. No new ranking code was needed;
+the phase's own instruction was to *connect* existing services, not build
+new ones.
+
+### 8. Map ↔ Calendar integration
+
+Calendar → Map: a month page's "Explore {Month} on Map →" link goes to
+`mapHref({ month })`, i.e. `/map?month=N` with no viewport. This exposed a
+real bug: `MapPageClient.tsx`'s old `parseUrlState()` returned one object
+and required `lat`+`lng`+`zoom` to all be present before it would read
+`month` at all — a month-only URL silently fell back to the current month
+instead. Fixed by splitting it into independent `parseViewState()` (still
+requires all three viewport params) and `parseMonthParam()` (reads `month`
+regardless, `undefined` when absent vs. `null` for "all year", so the
+effect that applies it doesn't clobber the default). Map → Calendar: a new
+"View {Month} Festivals →" link next to `MonthSelector`, to
+`calendarHref({ month })` — needed no equivalent fix, since `/calendar`
+already treated `?month=` as authoritative.
+
+### 9. Explore page structure
+
+`/explore`: dark editorial hero → Happening Now (festivals) → "{Month} in
+India" (a handful of this-month festivals, distinct from the destination
+rail below it) → "Best Places to Visit This Month" (destinations) → a
+Hidden India band (2 hidden destinations + 2 hidden festivals, CTA to
+`/hidden-india`) → three CTA tiles (Map/Festivals/Destinations). Every
+section hides itself when empty, same pattern as every other discovery
+page this codebase has built. `dynamic = "force-dynamic"` for the same
+reason as `/hidden-india` (Phase 5): no `searchParams` of its own, so
+without it Next would statically freeze a page that's supposed to be live.
+
+### 10. Analytics implementation
+
+Four new `AnalyticsEventType` values (`SEARCH_OPENED`,
+`SEARCH_RESULT_CLICK`, `CALENDAR_INTERACTION`, `EXPLORE_INTERACTION`;
+migration `20260830140000_search_calendar_explore_analytics`).
+`CALENDAR_INTERACTION`/`EXPLORE_INTERACTION` are each one generic type
+disambiguated by `metadata.action`, the same shape `MAP_INTERACTION`
+already used — not a dedicated enum value per action. Two new small
+primitives carry this: `TrackedLink` (a `next/link` + one `trackClientEvent`
+call) and `TrackedCardWrapper` (the same, wrapping a card whose only
+interactive surface is its own internal `Link`), written once Calendar
+*and* Explore needed the identical pattern. "Search refinement" (spec's
+own search-analytics list) is deliberately not a separate tracked event —
+`AnalyticsEvent` has no session concept, so a second `SEARCH_QUERY` close
+in time to a first is already a refinement in the data.
+
+### 11. SEO changes
+
+`/calendar` and `/explore` already had placeholder `metadata` blocks and
+sitemap entries from Phase 1's scaffolding (`src/app/sitemap.ts`'s
+`STATIC_ROUTES` already listed both) — only the copy needed to become real.
+`/search` stays `robots: { index: false }` (query pages, not content).
+
+### Files created/modified
+
+New: `src/features/discovery/context.ts`, `src/lib/hooks/useDebouncedValue.ts`,
+`src/components/discovery/{TrackedLink,TrackedCardWrapper}.tsx`,
+`src/app/api/search/{suggest,popular}/route.ts`, `src/lib/validation/search.ts`,
+`prisma/migrations/20260830140000_search_calendar_explore_analytics/`.
+Rewritten: `src/app/calendar/page.tsx` and `src/app/explore/page.tsx` (real
+implementations, replacing Phase 1 `PlaceholderPage`s), `src/features/search/
+{service,types}.ts`, `src/app/search/page.tsx`, `src/components/layout/
+HeaderSearch.tsx`. Modified: `src/app/map/MapPageClient.tsx` (the
+`parseUrlState` split — see #8), `src/components/map/MapSearch.tsx`
+(refactored onto `useDebouncedValue`), `src/features/festivals/service.ts`
+(`getHappeningNowFestivals`/`getUpcomingFestivals`), `src/config/nav.ts`
+(added an actual `/explore` link — the "Explore ▾" dropdown previously had
+no link to `/explore` itself, only to the categories inside it),
+`src/lib/validation/map.ts` (new event types in `analyticsEventSchema`),
+`prisma/schema.prisma`, `docs/{architecture,database}.md`. New loading
+states: `src/app/{search,calendar,explore}/loading.tsx`.
+
+### One real bug found and fixed this phase
+
+**Calendar → Map month deep link silently ignored the month.** Covered in
+detail under #8 above — a month-only URL (`/map?month=10`, no viewport)
+fell back to the current month instead of October, because the old
+`parseUrlState()` gated reading `month` behind `lat`+`lng`+`zoom` all being
+present. Caught while building the Calendar → Map CTA, not by an automated
+check; verified fixed via a real headless-browser navigation from
+`/calendar?month=10` through to `/map` with the October pill actually
+selected.
+
+### Tests/checks performed
+
+- `npm run typecheck`, `npm run lint`, `npm run build` — all clean.
+  `/calendar` renders dynamically (searchParams); `/explore` needed the
+  explicit `force-dynamic` export (same reasoning as `/hidden-india`).
+- Real end-to-end verification via headless Chromium against the
+  **production build**: header search overlay (open → debounced categorized
+  results → click-through; zero-result → suggestions), `/search` (real
+  query, typo-tolerant query via pg_trgm fallback for two different
+  misspellings, zero-result state, back-navigation preserving `?q=`),
+  `/calendar` (default Happening-Now/Upcoming view, `?month=10` view, the
+  "Explore October on Map" round trip landing on a correctly-selected
+  October), `/map?month=10` as a cold deep link (confirms the parser fix
+  directly), the reverse "View October Festivals" link back to
+  `/calendar?month=10`, `/explore` (all sections, CTAs), the new `/explore`
+  nav entry, and mobile viewports for Calendar/Explore. Zero browser
+  console errors or failed requests across all of it.
+
+### Known limitations
+
+- Search's relevance tiers don't distinguish *which* non-name field
+  matched (tag vs. description) — both fold into one "other match" tier,
+  a deliberate simplification over running a second attribution query for
+  marginal ranking value (see #2).
+- No automated tests — same gap noted in every prior phase.
+
+---
+
+<!-- Phase 7+ reports appended below as each phase completes. -->
