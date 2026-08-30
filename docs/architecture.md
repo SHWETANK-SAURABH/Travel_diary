@@ -482,3 +482,84 @@ merging them into an account later. So personalization here is keyed on
   rail (spec §20's own worked example is all destinations: "1. Meghalaya
   2. Hampi...") stayed destinations-only rather than adding a second,
   visually competing "Recommended Festivals" rail on the same page.
+
+## `middleware.ts` doesn't exist in Next.js 16 — it's `proxy.ts` now (a documentation staleness, not a security hole)
+
+Two files' comments (`src/lib/auth/config.ts`, `src/app/admin/page.tsx`)
+claimed `/admin` was "gated in middleware.ts." No such file exists in the
+repo — but `src/proxy.ts` does, committed back in Phase 2, with correct
+logic gating `/admin` behind the `ADMIN` role. `node_modules/next/dist/
+docs/.../middleware.md` explains the naming: Next.js 16 deprecated and
+renamed the `middleware.ts` convention to `proxy.ts` (same runtime, same
+execution model, just a different file/export name) — Phase 2 already used
+the correct post-rename name; the two comments elsewhere just never got
+updated to match. **Initially misdiagnosed as a missing security guard**:
+searching for `middleware.ts` (finding nothing) was taken as confirmation
+`/admin` was unprotected, without independently checking for `proxy.ts`
+under its correct name — an incomplete search, not a real gap. Once the
+bundled docs surfaced the rename (exactly the class of breaking change
+AGENTS.md warns about for this specific Next.js version), re-checking
+found the genuinely-correct existing file, and `git log -- src/proxy.ts`
+confirmed it dates to Phase 2. `/admin` has been correctly protected the
+entire time. The actual, real fix here is narrower: the two stale
+comments, corrected to point at `proxy.ts`, plus a rewrite of
+`src/proxy.ts` itself with clearer documentation of *why* it's named that
+way and why the Node.js runtime (new in Phase 2's version of Next, "Proxy
+defaults to using the Node.js runtime" vs. the old Middleware's Edge-only
+runtime) is what makes `auth()`'s database-session Prisma query usable
+inside it at all — a genuine clarity improvement, not a behavior change.
+
+## A Zustand + streaming-SSR hydration bug, and why the "obvious" fix wasn't enough
+
+Testing "guest saves something, then refreshes" (spec §48's own guest
+lifecycle test) surfaced a real React hydration mismatch (error #418) —
+verified with a minimal repro (pre-seed `localStorage` before any page
+ever loads, then load once) that isolated it to "guest store has non-empty
+data at the moment of hydration," independent of reload vs. first load.
+
+The first fix — `persist(..., { skipHydration: true })` plus an explicit
+`useGuestStore.persist.rehydrate()` call in a `GuestStoreHydrator` effect
+mounted near the root — was the textbook answer, and **it wasn't enough**.
+It's built on an assumption that doesn't hold under Next.js's default
+streaming/selective hydration: that the *whole tree* finishes hydrating
+(matching server HTML) before *any* component's effects run. In practice a
+component higher in the tree (`GuestStoreHydrator`, near the root) can have
+its effect fire and rehydrate the *shared* store before a component
+further down — `SaveButton` inside a page's streamed content — has
+finished its own hydration pass against its own server-rendered HTML,
+producing exactly the mismatch this was meant to prevent.
+
+The actual fix layers a second, independent guard on top:
+`src/lib/hooks/useHasHydrated.ts`, a plain `useState(false)` flipped to
+`true` in the *consuming* component's own effect. `SaveButton`/
+`VisitedButton` (via `useSavedState`/`useVisitedState`) render the same
+"not saved" default the server used until their own `hasHydrated` is
+true, regardless of what the shared store already holds — this doesn't
+depend on any cross-component timing assumption, only on React's guarantee
+that a component's own render-before-its-own-effect ordering is stable.
+`skipHydration` + `GuestStoreHydrator` are kept too — they're still correct
+and useful for preventing the *global* store from mutating prematurely for
+components that don't need the extra guard (e.g. `GuestMergeSync` already
+awaits `rehydrate()` explicitly before reading state) — but they are not,
+by themselves, sufficient for anything that renders the store's data
+directly. Verified fixed against the exact repro (pre-seeded localStorage,
+first load) and the full guest → save → visited → reload flow, in the
+production build, not dev mode (which didn't reliably reproduce the race
+in the first place — consistent with a streaming-timing bug being harder
+to hit under dev's slower, differently-instrumented request handling).
+
+## The recommendation engine is now saved/visited-aware (Phase 8)
+
+Spec §35 ("avoid repeatedly recommending items visited... do not
+completely exclude saved items automatically") is implemented as a mild
+score multiplier, not a hard filter: `RecommendationContext.userId` (set
+only from the server-side session, never client input) lets
+`recommendDestinations`/`recommendFestivals` look up the viewer's visited
+content for that type and apply a `×0.6` penalty in the final score before
+diversity selection — a visited destination can still appear (and would,
+if nothing else beats it), it just doesn't dominate. Saved content
+receives no penalty at all, matching "do not completely exclude." Applied
+on the *personalized/scored* path only; the anonymous fallback path
+doesn't currently reorder by visited status, a minor known gap over
+building a second reordering step for a path that already isn't
+personalized.

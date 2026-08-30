@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useSession, signOut } from "next-auth/react";
 import { User } from "lucide-react";
 import { Dropdown, DropdownItem, Button } from "@/components/ui";
+import { trackClientEvent } from "@/lib/analytics/client";
 
 export function AccountMenu() {
   const { data: session, status } = useSession();
@@ -36,7 +37,10 @@ export function AccountMenu() {
       {session.user.role === "ADMIN" && <DropdownItem href="/admin">Admin</DropdownItem>}
       <button
         type="button"
-        onClick={() => signOut()}
+        onClick={() => {
+          trackClientEvent({ type: "AUTH_INTERACTION", metadata: { action: "logout" } });
+          void signOut();
+        }}
         className="block w-full px-3 py-2 text-left text-sm text-ink transition-colors duration-fast hover:bg-marigold-50"
       >
         Sign out

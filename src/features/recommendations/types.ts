@@ -26,6 +26,14 @@ export interface RecommendationContext {
   stateSlug?: string;
   /** Excluded from results — used by recommendNearby so a detail page doesn't recommend itself. */
   excludeId?: string;
+  /**
+   * The signed-in viewer, if any — used only to look up their visited
+   * content and mildly deprioritize it (spec §35: "avoid repeatedly
+   * recommending items visited... do not completely exclude saved items
+   * automatically"). Never trusted from client input; callers always set
+   * this from the server-side session, not a request body.
+   */
+  userId?: string;
 }
 
 export interface RecommendationSignals {

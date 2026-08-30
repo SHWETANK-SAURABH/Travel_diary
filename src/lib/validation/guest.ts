@@ -22,6 +22,13 @@ export const guestStateSchema = z.object({
       savedAt: z.string(),
     })
   ),
+  visitedItems: z.array(
+    z.object({
+      contentType: contentTypeSchema,
+      contentId: z.string().min(1),
+      visitedAt: z.string(),
+    })
+  ),
   trips: z.array(
     z.object({
       localId: z.string().min(1),

@@ -3,6 +3,8 @@
 import { useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionProvider } from "next-auth/react";
+import { GuestMergeSync } from "@/components/account/GuestMergeSync";
+import { GuestStoreHydrator } from "@/components/account/GuestStoreHydrator";
 
 /**
  * Client-side provider tree. Kept intentionally thin:
@@ -11,6 +13,9 @@ import { SessionProvider } from "next-auth/react";
  * UI state and guest state are handled by per-feature zustand stores
  * instead of a top-level provider — see src/lib/guest and each feature's
  * store, so this tree never grows into a global state dumping ground.
+ * GuestStoreHydrator/GuestMergeSync render nothing — see their own
+ * docstrings (localStorage rehydration without a hydration mismatch; the
+ * guest→account merge trigger).
  */
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(
@@ -24,7 +29,11 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <SessionProvider>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <GuestStoreHydrator />
+        <GuestMergeSync />
+        {children}
+      </QueryClientProvider>
     </SessionProvider>
   );
 }

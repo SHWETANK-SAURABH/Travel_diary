@@ -263,23 +263,39 @@ specifically so both `src/features/users/service.ts` (the authenticated
 preference upsert) and `src/lib/guest/merge.ts` (the guest-to-account
 preference merge) can import it without `lib` depending back on `features`.
 
-## Analytics event types (Phase 6/7 additions)
+## Analytics event types (Phase 6/7/8 additions)
 
 `AnalyticsEventType` gained `SEARCH_OPENED`, `SEARCH_RESULT_CLICK`,
 `CALENDAR_INTERACTION`, and `EXPLORE_INTERACTION` in Phase 6 (migration
-`20260830140000_search_calendar_explore_analytics`), then
-`ONBOARDING_INTERACTION`, `PREFERENCE_UPDATED`, and `RECOMMENDATION_VIEWED`
-in Phase 7 (migration `20260831090000_personalization_preferences`).
-`CALENDAR_INTERACTION`, `EXPLORE_INTERACTION`, and `ONBOARDING_INTERACTION`
-are each one generic type disambiguated by `metadata.action`
+`20260830140000_search_calendar_explore_analytics`); `ONBOARDING_INTERACTION`,
+`PREFERENCE_UPDATED`, and `RECOMMENDATION_VIEWED` in Phase 7 (migration
+`20260831090000_personalization_preferences`); and `AUTH_INTERACTION`,
+`VISITED`, `GUEST_MERGE` in Phase 8 (migration
+`20260831130000_account_visited_analytics`). `CALENDAR_INTERACTION`,
+`EXPLORE_INTERACTION`, `ONBOARDING_INTERACTION`, and `AUTH_INTERACTION` are
+each one generic type disambiguated by `metadata.action`
 (`"month_selected"`, `"map_cta_clicked"`, `"festival_clicked"`,
-`"discovery_clicked"`, `"started"`, `"completed"`, `"skipped"`, ...) rather
+`"discovery_clicked"`, `"started"`, `"completed"`, `"skipped"`,
+`"signup_started"`, `"signup_completed"`, `"login"`, `"logout"`, ...) rather
 than a dedicated enum value per action — the same shape `MAP_INTERACTION`
 already used. Recommendation saves/add-to-trip deliberately reuse the
 existing `SAVE`/`ADD_TO_TRIP` types (with `metadata.source` distinguishing
 where the action happened) rather than adding `RECOMMENDATION_SAVED`/
 `RECOMMENDATION_ADDED_TO_TRIP` variants — the same action on the same
-content, just from a different card.
+content, just from a different card. `VISITED` is its own type (not folded
+into a generic interaction type) since it's a first-class content-state
+action, symmetric with `SAVE`.
+
+## SavedContent/VisitedContent are the same shape, deliberately
+
+Both are `(userId, contentType, contentId)` unique-constrained rows with
+only a `createdAt` — existence *is* the state, matching the Phase 1
+decision documented above ("no visit dates, notes, or ratings"). Phase 8
+resolves rows of either table through the same
+`resolveContentRecords()` helper in `src/features/users/service.ts` — one
+batched-per-content-type resolver, not two, since the resolution logic
+(turn a polymorphic id into a real record + image + href) doesn't care
+which table the ids came from.
 
 ## Seed data
 

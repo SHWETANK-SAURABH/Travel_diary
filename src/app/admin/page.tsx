@@ -5,7 +5,7 @@ import { Container } from "@/components/layout";
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 /**
- * Route protection is enforced in src/middleware.ts (ADMIN role required,
+ * Route protection is enforced in src/proxy.ts (ADMIN role required,
  * everything else redirected to sign-in). This page assumes that guard has
  * already run.
  */

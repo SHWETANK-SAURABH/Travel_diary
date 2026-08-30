@@ -60,7 +60,7 @@ export default async function DestinationDetailPage({ params }: PageProps) {
   let personalizedNearby: Awaited<ReturnType<typeof recommendNearby>> | null = null;
   if (session) {
     const preference = await getPreference(session.user.id);
-    const context = preferenceToContext(preference, { excludeId: destination.id });
+    const context = preferenceToContext(preference, { excludeId: destination.id, userId: session.user.id });
     if (hasPersonalizationSignal(context)) {
       personalizedNearby = await recommendNearby(
         { kind: "destination", id: destination.id, latitude: destination.latitude, longitude: destination.longitude },
@@ -194,9 +194,12 @@ export default async function DestinationDetailPage({ params }: PageProps) {
             <Disclosure title="Food">
               <ul className="space-y-3">
                 {destination.foods.map((food) => (
-                  <li key={food.id}>
-                    <p className="font-medium text-ink">{food.name}</p>
-                    <p className="text-caption text-ink-muted">{food.description}</p>
+                  <li key={food.id} className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-ink">{food.name}</p>
+                      <p className="text-caption text-ink-muted">{food.description}</p>
+                    </div>
+                    <SaveButton kind="food" id={food.id} size="sm" />
                   </li>
                 ))}
               </ul>

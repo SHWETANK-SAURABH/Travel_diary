@@ -1214,4 +1214,260 @@ by the `CrowdPreference` enum removal) is fully superseded by
 
 ---
 
-<!-- Phase 8+ reports appended below as each phase completes. -->
+## Phase 8 — Accounts, Saves, Visited & Guest-to-Account Sync
+
+**Status: complete.**
+
+### Summary
+
+Completed the personal account layer: guest-capable "Mark as Visited" (was
+authenticated-only until now), an automatic guest→account merge that fires
+the instant a guest signs in with no user action required, a rebuilt
+`/profile` with real Saved/Visited/Trips/Account tabs, optimistic save/
+visited with rollback-on-failure, and a real Auth.js sign-in error page.
+Along the way, found and fixed a genuine cross-component React hydration
+race in the guest store — not a cosmetic bug, a real error #418 reproduced
+with a minimal repro and fixed with a second, independent guard layer once
+the textbook fix (`skipHydration` + a root-level rehydrate effect) turned
+out insufficient under Next.js's streaming hydration model — and separately
+caught an incomplete first pass at diagnosing `/admin`'s protection before
+it shipped as a false "bug fixed" claim: `/admin` was already correctly
+gated (since Phase 2, under `src/proxy.ts`), just documented with two stale
+comments referencing Next.js 16's pre-rename `middleware.ts` name.
+
+### 1. Authentication provider/architecture
+
+Unchanged from Phase 1 — Google OAuth + Auth.js's passwordless
+Nodemailer/magic-link email, both via the Prisma adapter, no custom
+password hashing. Phase 8's own spec text asks for "email + password" in
+one section while its section 3 prohibits "custom password hashing or
+authentication cryptography" in the next — a direct self-contradiction,
+since a password provider *is* exactly that. Magic-link email satisfies
+both halves (it's still "email authentication," and Auth.js "naturally
+handles verification" per the spec's own escape hatch) without adding a
+second, contradicting method. Documented directly in `src/lib/auth/
+config.ts`'s comment, not just here, since that's where the next reader
+would look.
+
+New this phase: `authConfig.events.createUser`/`.signIn` for
+server-side, authoritative `AUTH_INTERACTION` analytics (`signup_completed`
+fires exactly once per account, from Auth.js's own lifecycle — a cleaner
+signal than anything client code could infer). `/admin`'s protection was
+also verified this phase (see #9) — it was already correct, not newly added.
+
+### 2. Guest persistence architecture
+
+`src/lib/guest/store.ts` — one versioned Zustand store
+(`traveldiary.guest.v1`), one dedicated abstraction, already satisfying the
+spec's "do not scatter raw localStorage calls... use a structured
+namespace" without needing to split into the spec's illustrative
+`travelDiary:guest:saves`/`:visited`/`:preferences` multi-key example.
+`GuestState` gained `visitedItems` this phase (mirroring `savedItems`
+exactly) — visited was previously authenticated-only, since the Phase 1
+guest architecture only ever covered save + trips. `DiscoveryKind` gained
+a `"food"` variant (`SaveButton kind="food"` now appears next to Food
+items on festival/destination detail pages) since the spec explicitly
+lists food as saveable (§10) and there was previously no saveable surface
+for it at all — no `/food/[slug]` page exists yet, so these save without a
+detail-page link, the same "no href yet" treatment Experience/Event items
+already got in Phase 6's search results.
+
+### 3. Account persistence architecture
+
+Unchanged shape (`SavedContent`/`VisitedContent`, `(userId, contentType,
+contentId)` unique-constrained rows, existence-is-state) — new this phase
+is *reading* them back: `resolveContentRecords()` in `src/features/users/
+service.ts` batches the polymorphic ids per content type (one query per
+type present, not one per row) and returns them with image/href/location
+resolved, powering the profile's Saved/Visited tabs. A row whose target
+content was since deleted is silently dropped rather than crashing the
+list — the same "service layer owns this integrity, not the database"
+trade-off documented on the `Media` model applies here too.
+
+### 4. Guest-to-account merge strategy
+
+The automatic trigger (spec §21: "the most important part of the phase")
+is `src/components/account/GuestMergeSync.tsx`, mounted once in the
+provider tree. It watches `useSession()`, and the instant `status`
+becomes `"authenticated"`, checks whether the guest store has *any*
+content; if so it `POST`s the full snapshot to `/api/guest/merge` and only
+clears local state after a successful response. No button, no prompt — it
+just happens.
+
+Per-field strategy (spec §22):
+- **Saves/visited**: `local ∪ server → true`, via
+  `SavedContent.upsert`/`VisitedContent.upsert` with a no-op `update: {}`
+  — the exact same shape for both, since they're structurally identical.
+- **Preferences**: account-authoritative. If the account already has a
+  `UserPreference` row (Phase 7), the guest snapshot is never imported
+  over it — only a guest signing into an account with *no* preferences
+  yet gets theirs carried over. This was actually built in Phase 7 (the
+  preference half of this merge predates this phase); Phase 8 added the
+  saved/visited halves and, critically, the trigger that ever calls any
+  of it.
+- **Trips**: skipped if a trip with the same name already exists for the
+  account, to avoid duplicating something already synced.
+
+### 5. Merge failure/retry behavior
+
+Idempotent by construction, not a separate "already merged" flag: every
+write above is naturally safe to repeat (unique-constrained upserts,
+name-based trip dedup, preference-only-if-empty). Local guest state is
+never cleared until the server confirms success (spec §24), so a failed
+request leaves everything as-is and a later mount (e.g. the user reloads)
+simply retries with the same still-present data — no toast or retry UI was
+built for this specific background sync, since nothing is lost by staying
+silent and retryable; a user-visible failure state was judged
+disproportionate for an automatic, no-action-required background process.
+
+### 6. Save model
+
+Unchanged data shape, but now genuinely optimistic (spec §15) for
+authenticated users: `useSavedState` flips the UI immediately on click,
+then syncs; a failed request reverts the flip and surfaces a small inline
+error (`SaveButton` renders it below the button, `role="alert"`) rather
+than leaving the UI claiming an unconfirmed state. Guests still write
+straight to the local store (no network round trip to be optimistic
+about). Duplicate prevention remains DB-level (`@@unique([userId,
+contentType, contentId])`, unchanged since Phase 1) — spec §16's "enforce
+at the database level, not only frontend checks" was already true before
+this phase.
+
+### 7. Visited model
+
+Was authenticated-only; now mirrors Save exactly, guest-capable via the
+same store, same optimistic-update-with-rollback shape
+(`useVisitedState`). `VisitedButton` no longer redirects guests to sign in
+— it just works locally, same as Save always did.
+
+### 8. Preference synchronization
+
+Unchanged from Phase 7 (`GET`/`PUT /api/preferences`, `/profile`'s
+Preferences tab reusing `OnboardingWizard` via `PreferencesEditor`) —
+Phase 8 didn't need to touch this beyond making sure the profile page
+still renders it correctly inside the new tab structure, and beyond the
+recommendation engine now also reading `userId` for the visited-penalty
+(see `docs/architecture.md`).
+
+### 9. Security/authorization approach
+
+Every private API route already derived identity from `auth()`'s
+server-side session, never a client-supplied id (unchanged since Phase 1)
+— spec §38/§40's core requirement was already met going into this phase.
+`/admin` was double-checked too, since its own code comments claimed
+protection "enforced in middleware.ts" and no file by that name exists —
+Next.js 16 renamed the convention to `proxy.ts` (see `docs/architecture.md`
+for the full finding). That rename was initially misread as "the guard
+file is missing" until `git log -- src/proxy.ts` showed it's been present
+and correct since Phase 2 — the comments were just stale, not the
+protection. Verified (rather than assumed) via direct HTTP requests, since
+this environment's `AUTH_URL` points at a different port than the one used
+for testing: signed-out → 307 to sign-in, signed-in non-admin → 307 to
+sign-in, signed-in admin → 200 — all already true beforehand. No rate
+limiting was added beyond what the hosting platform provides by default —
+spec §41's own hedge ("do not build a massive security platform... use
+provider/platform capabilities where possible") reads as explicitly
+deferring this to deployment infrastructure, not application code.
+
+### 10. Analytics events
+
+Three new `AnalyticsEventType` values this phase: `AUTH_INTERACTION`
+(generic + `metadata.action`, mirroring the Phase 6/7 pattern —
+`signup_started`/`signup_completed`/`login`/`logout`), `VISITED` (its own
+type, not folded into something generic, since it's a first-class
+content-state action symmetric with the existing `SAVE`), and
+`GUEST_MERGE`. This time the Zod `analyticsEventSchema`
+(`src/lib/validation/map.ts`) was updated in the *same* change as the
+Prisma enum — Phase 7's report flagged forgetting this exact step as a
+recurring risk, and it was caught here by discipline rather than
+tooling.
+
+### Files created/modified
+
+New: `src/components/account/` (`GuestMergeSync`, `GuestStoreHydrator`,
+`ContentListItem`), `src/lib/hooks/useHasHydrated.ts`,
+`src/app/profile/SignOutButton.tsx`,
+`prisma/migrations/20260831130000_account_visited_analytics/`. Rewritten:
+`src/app/profile/page.tsx` (tabbed Preferences/Saved/Visited/Trips/Account,
+replacing the preferences-only Phase 7 version), `src/app/auth/sign-in/
+page.tsx` (real error handling), `src/components/discovery/
+{useSavedState,useVisitedState,SaveButton,VisitedButton}.tsx` (guest
+support for visited, optimistic updates, error surfacing, the hydration
+fix), `src/lib/guest/{types,store,merge}.ts` (visited items, skipHydration).
+Modified: `src/proxy.ts` (documentation rewrite only — the gating logic was
+already correct, see the security section above), `src/lib/auth/config.ts`
+(events, comments), `src/app/admin/page.tsx` (comment), `src/app/
+providers.tsx` (mounts the two new account components), `src/app/
+{festivals,destinations}/[slug]/page.tsx` (Save buttons on Food items),
+`src/components/map/DiscoveryPreviewPanel.tsx` (added VisitedButton, was
+Save-only), `src/components/discovery/contentKind.ts` (added `"food"`),
+`src/features/recommendations/{types,service}.ts`
+(visited-deprioritization), `src/features/users/{service,types}.ts`
+(`listSavedContent`/`listVisitedContent`), `src/lib/validation/
+{guest,map}.ts`, `prisma/schema.prisma`, `docs/{architecture,database}.md`.
+
+### One real bug found and fixed this phase, and one false alarm corrected before shipping
+
+1. **A genuine React hydration mismatch in the guest store**, only
+   reproducible with real (non-empty) guest data present at hydration
+   time — full writeup in `docs/architecture.md`, including why the
+   first, textbook fix wasn't sufficient. This was caught specifically
+   because Phase 8's own spec (§48) asks to test "guest saves, then
+   refreshes" — a test earlier phases had no reason to run.
+2. **`/admin` protection was initially misdiagnosed as missing, then found to already be correct.** Two stale comments (`src/lib/auth/config.ts`,
+   `src/app/admin/page.tsx`) referenced a `middleware.ts` that Next.js 16
+   renamed to `proxy.ts` — but `src/proxy.ts` already existed, committed
+   in Phase 2, with fully correct role-gating logic. The first search only
+   checked for `middleware.ts` and (wrongly) concluded protection was
+   missing entirely; `git log -- src/proxy.ts` during write-up caught the
+   mistake before it shipped as a false "bug fixed" claim. The real,
+   narrower fix: the two stale comments, and a documentation rewrite of
+   the already-correct `proxy.ts` explaining the rename and why it matters
+   (see `docs/architecture.md`) — no behavior change. Verified via direct
+   HTTP requests (not full page navigation, since this environment's
+   `AUTH_URL` points at a different port than the one used for testing):
+   signed-out → 307 to sign-in, signed-in non-admin → 307 to sign-in,
+   signed-in admin → 200 — confirming protection was already correct, not
+   demonstrating a fix.
+
+### Tests/checks performed
+
+- `npm run typecheck`, `npm run lint`, `npm run build` — all clean.
+- Real end-to-end verification via headless Chromium against the
+  **production build**, including a from-scratch authenticated session
+  (same technique as Phase 7: a real `User` + database `Session` row
+  created directly, cookie set on the browser context — this environment
+  has no working OAuth/SMTP credentials to drive an actual sign-in flow)
+  plus a second, `role: "ADMIN"` user for the security check: guest
+  save+visited surviving a real page reload (the exact scenario that
+  originally reproduced the hydration bug — reverified clean after the
+  fix, zero console errors); a genuine guest→account merge (built up
+  saved/visited/preference state as a guest across two pages, then
+  injected the session cookie to simulate signing in, confirmed the
+  server received and persisted everything and localStorage was cleared
+  only afterward); the merged content appearing correctly in `/profile`'s
+  Saved/Visited tabs with working unsave/unvisit toggles right from the
+  list; account saves persisting in a fresh browser context with the same
+  session (cross-"device" simulation); `/admin` access for signed-out,
+  signed-in-non-admin, and signed-in-admin; the sign-in page's error
+  message for a real Auth.js error code; and a broad regression sweep
+  (home, map, festivals/destinations listings, hidden-india, search,
+  both detail pages, trips, sign-in, mobile profile) — zero console
+  errors or failed requests anywhere in the final run.
+
+### Known limitations
+
+- No rate limiting was added at the application layer — deferred to
+  hosting-platform capabilities per the spec's own hedge (see #9).
+- The guest→account merge has no conflict-review UI — a failed/retried
+  merge is silent and automatic, with no user-visible progress or error
+  state, since it's a background process with no user action to attach
+  feedback to.
+- Search results still don't show a Save affordance (Phase 6's own "do
+  not overload results" instruction was judged to still apply) — spec
+  §13 hedges this as "where appropriate."
+- No automated tests — same gap noted in every prior phase.
+
+---
+
+<!-- Phase 9+ reports appended below as each phase completes. -->

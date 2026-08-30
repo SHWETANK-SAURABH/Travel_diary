@@ -1,0 +1,4 @@
+-- AlterEnum
+ALTER TYPE "AnalyticsEventType" ADD VALUE 'AUTH_INTERACTION';
+ALTER TYPE "AnalyticsEventType" ADD VALUE 'VISITED';
+ALTER TYPE "AnalyticsEventType" ADD VALUE 'GUEST_MERGE';

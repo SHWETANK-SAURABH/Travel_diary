@@ -3,17 +3,23 @@ import { deriveBudgetLevel } from "@/lib/preferences/budget";
 import type { GuestState } from "./types";
 
 /**
- * Merges local guest state into a newly-signed-in user's account. Called
- * from a server action/route the client hits right after sign-in, passing
- * the localStorage snapshot along (the server has no access to it
- * otherwise). Idempotent: safe to call more than once for the same guest
- * snapshot (saves are unique-constrained; trips are matched by localId via
- * TripItem-free re-creation is avoided by only importing trips once per
- * name — see note below).
+ * Merges local guest state into a newly-signed-in user's account. Called by
+ * `GuestMergeSync` (src/components/account/GuestMergeSync.tsx) right after
+ * sign-in, via `POST /api/guest/merge`, passing the localStorage snapshot
+ * along (the server has no access to it otherwise). The caller only clears
+ * local guest state *after* this returns successfully — never before, so a
+ * failed/retried merge can't lose data (spec §24).
+ *
+ * Idempotent by construction, not by a separate "already merged" flag:
+ * saves/visited are unique-constrained upserts (`update: {}` — a no-op if
+ * the row already exists), trips are skipped if a trip with the same name
+ * already exists for this user, and preferences only import if the account
+ * has none yet (see below). Running this twice with the same snapshot
+ * produces the same end state, not duplicates.
  *
  * Kept intentionally simple for the foundation: no conflict UI, no partial
- * merge review. That's a Phase 2+ concern once there's a trip builder to
- * surface it in.
+ * merge review. That's a later concern once there's a full trip builder to
+ * surface it in (Phase 9).
  */
 export async function mergeGuestDataIntoAccount(userId: string, guestState: GuestState) {
   await db.$transaction(async (tx) => {
@@ -45,6 +51,22 @@ export async function mergeGuestDataIntoAccount(userId: string, guestState: Gues
 
     for (const item of guestState.savedItems) {
       await tx.savedContent.upsert({
+        where: {
+          userId_contentType_contentId: {
+            userId,
+            contentType: item.contentType,
+            contentId: item.contentId,
+          },
+        },
+        create: { userId, contentType: item.contentType, contentId: item.contentId },
+        update: {},
+      });
+    }
+
+    // Visited follows the exact same "local + server -> true" union as
+    // saves (spec §22) — same upsert shape, same idempotency guarantee.
+    for (const item of guestState.visitedItems) {
+      await tx.visitedContent.upsert({
         where: {
           userId_contentType_contentId: {
             userId,

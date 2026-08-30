@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Badge, Button, Skeleton } from "@/components/ui";
-import { SaveButton, AddToTripButton } from "@/components/discovery";
+import { SaveButton, VisitedButton, AddToTripButton } from "@/components/discovery";
 import { trackClientEvent } from "@/lib/analytics/client";
 import type { DiscoveryPreview } from "@/app/api/map/discovery/route";
 
@@ -67,6 +67,7 @@ export function DiscoveryPreviewPanel({ selected }: { selected: SelectedDiscover
 
       <div className="mt-5 flex flex-wrap gap-2">
         <SaveButton kind={selected.kind} id={selected.id} size="sm" />
+        <VisitedButton kind={selected.kind} id={selected.id} size="sm" />
         <AddToTripButton id={selected.id} size="sm" />
         {exploreHref && (
           <Link

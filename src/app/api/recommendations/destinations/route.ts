@@ -27,7 +27,7 @@ export async function POST(request: Request) {
 
   if (session) {
     const preference = await getPreference(session.user.id);
-    context = preferenceToContext(preference, context);
+    context = preferenceToContext(preference, { ...context, userId: session.user.id });
   } else if (body.data.guestPreferences) {
     const guest = body.data.guestPreferences;
     context = {

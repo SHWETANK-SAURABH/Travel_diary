@@ -55,6 +55,15 @@ function geoKeyFor(location: { id: string; parentId: string | null; type: string
   return location.type === "STATE" ? location.id : location.parentId;
 }
 
+/** A mild, non-exclusionary penalty applied when a candidate is already marked visited (spec §35: "avoid repeatedly recommending... do not completely exclude"). */
+const VISITED_PENALTY = 0.6;
+
+async function getVisitedContentIds(userId: string | undefined, contentType: "FESTIVAL" | "DESTINATION"): Promise<Set<string>> {
+  if (!userId) return new Set();
+  const rows = await db.visitedContent.findMany({ where: { userId, contentType }, select: { contentId: true } });
+  return new Set(rows.map((r) => r.contentId));
+}
+
 function anonymousDestinationReasons(d: { featured: boolean; popularity: string }, inSeason: boolean): string[] {
   const reasons: string[] = [];
   if (d.featured) reasons.push("Editor's pick");
@@ -123,10 +132,13 @@ export async function recommendDestinations(
     select: DESTINATION_PERSONALIZED_SELECT,
   });
 
-  const media = await mediaForMany(
-    "DESTINATION",
-    candidates.map((c) => c.id)
-  );
+  const [media, visitedIds] = await Promise.all([
+    mediaForMany(
+      "DESTINATION",
+      candidates.map((c) => c.id)
+    ),
+    getVisitedContentIds(context.userId, "DESTINATION"),
+  ]);
 
   const scored: Recommendation<DestinationRecommendationItem>[] = candidates.map((c) => {
     const dto: DestinationCandidate = {
@@ -139,7 +151,8 @@ export async function recommendDestinations(
       featured: c.featured,
       hasFestivalConnection: c._count.festivals > 0,
     };
-    const { score, signals } = scoreDestination(dto, context);
+    const { score: rawScore, signals } = scoreDestination(dto, context);
+    const score = visitedIds.has(c.id) ? rawScore * VISITED_PENALTY : rawScore;
     return {
       item: {
         id: c.id,
@@ -242,10 +255,13 @@ export async function recommendFestivals(
     select: FESTIVAL_PERSONALIZED_SELECT,
   });
 
-  const media = await mediaForMany(
-    "FESTIVAL",
-    candidates.map((c) => c.id)
-  );
+  const [media, visitedIds] = await Promise.all([
+    mediaForMany(
+      "FESTIVAL",
+      candidates.map((c) => c.id)
+    ),
+    getVisitedContentIds(context.userId, "FESTIVAL"),
+  ]);
 
   const scored: Recommendation<FestivalRecommendationItem>[] = candidates.map((c) => {
     const occurrence = pickOccurrence(c.occurrences);
@@ -256,7 +272,8 @@ export async function recommendFestivals(
       occurrence,
       hasDestinationConnection: c._count.destinations > 0,
     };
-    const { score, signals } = scoreFestival(dto, context);
+    const { score: rawScore, signals } = scoreFestival(dto, context);
+    const score = visitedIds.has(c.id) ? rawScore * VISITED_PENALTY : rawScore;
     return {
       item: {
         id: c.id,

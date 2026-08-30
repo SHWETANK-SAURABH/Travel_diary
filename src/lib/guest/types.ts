@@ -6,6 +6,12 @@ export interface GuestSavedItem {
   savedAt: string; // ISO timestamp
 }
 
+export interface GuestVisitedItem {
+  contentType: ContentType;
+  contentId: string;
+  visitedAt: string; // ISO timestamp
+}
+
 export interface GuestTripItemDraft {
   day: number;
   order: number;
@@ -43,6 +49,7 @@ export interface GuestPreferences {
 
 export interface GuestState {
   savedItems: GuestSavedItem[];
+  visitedItems: GuestVisitedItem[];
   trips: GuestTripDraft[];
   preferences: GuestPreferences | null;
 }
