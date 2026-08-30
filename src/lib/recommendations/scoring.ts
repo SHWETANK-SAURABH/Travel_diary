@@ -1,3 +1,4 @@
+import { isMonthInRange } from "@/lib/date/month-range";
 import type { RecommendationContext } from "./types";
 
 export interface ScorableFields {
@@ -48,10 +49,4 @@ export function scoreCandidate(candidate: ScorableFields, context: Recommendatio
   }
 
   return { score, reasons };
-}
-
-function isMonthInRange(month: number, start: number, end: number): boolean {
-  if (start <= end) return month >= start && month <= end;
-  // Wraps around the year, e.g. Nov(11) - Feb(2)
-  return month >= start || month <= end;
 }

@@ -1,14 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { ResponsiveImage, Modal } from "@/components/ui";
+import { ResponsiveImage } from "./ResponsiveImage";
+import { Modal } from "./Modal";
 
 export interface GalleryImage {
   url: string;
   altText: string | null;
 }
 
-export function FestivalGallery({ images, festivalName }: { images: GalleryImage[]; festivalName: string }) {
+/** Compact grid + lightbox `Modal` — shared by festival and destination detail pages. The hero already shows images[0], so this renders images[1:]. */
+export function Gallery({ images, contentName }: { images: GalleryImage[]; contentName: string }) {
   const [openIndex, setOpenIndex] = useState<number | null>(null);
 
   if (images.length <= 1) return null; // the hero already shows the one image — no separate gallery needed
@@ -20,7 +22,7 @@ export function FestivalGallery({ images, festivalName }: { images: GalleryImage
           <button key={image.url} type="button" onClick={() => setOpenIndex(i + 1)} className="text-left">
             <ResponsiveImage
               src={image.url}
-              alt={image.altText ?? `${festivalName} photo ${i + 2}`}
+              alt={image.altText ?? `${contentName} photo ${i + 2}`}
               aspectRatio="1/1"
               containerClassName="rounded-md"
               className="rounded-md"
@@ -33,7 +35,7 @@ export function FestivalGallery({ images, festivalName }: { images: GalleryImage
         {openIndex !== null && (
           <ResponsiveImage
             src={images[openIndex].url}
-            alt={images[openIndex].altText ?? `${festivalName} photo ${openIndex + 1}`}
+            alt={images[openIndex].altText ?? `${contentName} photo ${openIndex + 1}`}
             aspectRatio="3/2"
             priority
           />

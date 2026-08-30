@@ -12,7 +12,7 @@ export interface NearbyDiscoveryProps {
   destinations: NearbyItem[];
 }
 
-/** "You're visiting this festival — also explore nearby" — geographic proximity, not curated relations (see getNearbyToFestival). */
+/** "You're visiting this — also explore nearby" — geographic proximity, not curated relations. Shared by festival and destination detail pages (see getNearbyToFestival/getNearbyToDestination). */
 export function NearbyDiscovery({ festivals, destinations }: NearbyDiscoveryProps) {
   if (festivals.length === 0 && destinations.length === 0) return null;
 

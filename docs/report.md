@@ -578,4 +578,179 @@ original reload-restoration path (Phase 3's fix) still works unmodified.
 
 ---
 
-<!-- Phase 5+ reports appended below as each phase completes. -->
+## Phase 5 — Destination Discovery System
+
+**Status: complete.**
+
+### Summary
+
+Built the complete destination discovery experience, mirroring Phase 4's
+festival system in shape: a real `/destinations` listing page (Featured /
+Best This Month / Hidden Gems / More Destinations sections, ranked by a
+seasonal-aware heuristic) and a rich `/destinations/[slug]` detail page
+(hero, quick travel snapshot, progressive disclosure, nearby discovery,
+Save/Visited/Add-to-Trip/Share, structured data), plus a real
+`/hidden-india` editorial page. Along the way, generalized the Phase 4
+festival-only UI pieces (gallery, filter links, nearby discovery) into
+shared components now used by both content types — the second consumer is
+what triggered the generalization, not a preemptive abstraction.
+
+### 1. Destination data architecture
+
+Two additions, both mirroring Phase 4's festival pattern for the same
+reasons: `DestinationCategory` (a real DB-backed taxonomy — Nature,
+Heritage, Beach, Mountain, Cultural, City — since `Destination` had *no*
+type field at all before this phase, unlike `Festival`) and
+`Destination.featured: Boolean`. `DestinationCategory` deliberately omits
+"Hidden gem"/"Major destination" from the spec's example type list — those
+describe popularity, not type, and `Destination.popularity` already covers
+that; adding them as categories too would be a redundant second
+classification for the same concept. Full rationale in `docs/database.md`.
+
+### 2. Seasonal ranking implementation
+
+`src/features/destinations/ranking.ts` — same weighted-sum shape and
+balance as the festival ranker (featured +100, popularity scored so
+`HIDDEN`/`LOCAL_EMERGING` aren't drowned out by `POPULAR`), with
+"seasonal suitability" (+40, current/selected month inside
+`bestTimeStartMonth`–`bestTimeEndMonth`, wraparound-aware) replacing
+festivals' temporal-status scoring, and "festivals/events nearby" as a
+cheap proxy: +15 if the destination has any curated `Festival` connection.
+Extracted the month-in-range-with-wraparound check
+(`src/lib/date/month-range.ts`) out of `lib/recommendations/scoring.ts`,
+which had a private, unexported copy of the identical logic — now shared
+by both.
+
+### 3. Best-time implementation
+
+No schema changes — Phase 1's `bestTimeStartMonth`/`EndMonth`/`altTime*`/
+`bestTimeExplanation`/`bestTimeSource` already covered everything this
+phase needed. `formatMonthRange()` and `isInSeason()`
+(`src/features/destinations/seasonal.ts`) are the only new code: display
+formatting and the seasonal-indicator check shared by cards, the listing
+page's "Best This Month" section, and the detail page's quick snapshot.
+
+### 4. Budget implementation
+
+`BudgetBadge` renders `BudgetLevel` as ₹/₹₹/₹₹₹. "Typical trip" cost (the
+spec's own example: "₹12K–₹18K") is a documented heuristic —
+`approximateCostPerDay × [3, 5]` days — not a real estimator; the honest
+per-traveller/per-duration estimate is explicitly recommendation-engine
+territory (out of scope). Landed close to the spec's own illustrative
+number by coincidence, not by tuning to match it.
+
+### 5. Festival/destination relationships
+
+The `Festival.destinations` m2m relation existed in the schema since Phase
+1 but was never actually populated in seed data until Phase 4 (3
+connections) and this phase (a 4th, for the new Palolem Beach → Goa Food &
+Music Festival pairing — added specifically because "Beach" had zero
+category coverage otherwise). The destination detail page's "Festivals"
+section reads this relation directly; nothing new needed there.
+
+### 6. Nearby discovery implementation
+
+`getNearbyToDestination()` — same ~150km bounding-box pattern as Phase 4's
+`getNearbyToFestival()`, reusing `padBoundingBox`. Renders through the
+now-shared `NearbyDiscovery` component.
+
+### 7. Hidden India implementation
+
+`/hidden-india` queries `getFestivalDiscoveryFeed({ popularity: "HIDDEN" })`
+and `getDestinationDiscoveryFeed({ popularity: "HIDDEN" })` and renders
+both in one page, under a deliberately moodier full-bleed dark band (`bg-ink
+text-paper`) — still built from the shared design tokens, not a second
+theme, per the spec's "part of the shared design system." Also fixed a
+real bug here (see below).
+
+### 8. Map integration
+
+"View on Map" reuses the exact `/map?lat&lng&zoom&month` URL contract from
+Phase 3/4 — no new map code, no new bugs (the Phase 4 `useSearchParams()`
+fix already covers this path).
+
+### 9. SEO implementation
+
+Same shape as Phase 4's festival page: `generateMetadata` with a real OG
+image, `TouristAttraction` + `BreadcrumbList` JSON-LD with the same
+`<` → `<` escaping. `/destinations` and `/destinations/[slug]` were
+already dynamic (searchParams / slug params force it); `/hidden-india`
+needed an explicit fix — see below.
+
+### 10. Analytics implementation
+
+`trackPageView`/`trackDestinationView` (both existed since Phase 1, unused
+until now) wired into `/destinations` and `/destinations/[slug]`;
+`trackPageView` also added to `/hidden-india`. Click-level analytics
+(destination/nearby/festival/experience/food clicked) remain out of scope
+for the same reason as Phase 4's festival cards — no client JS on a
+server-rendered card grid; the honest scope trim, not an oversight.
+
+### Files created/modified
+
+New: `src/components/destinations/{DestinationCard,BudgetBadge}.tsx`,
+`src/features/destinations/{ranking,seasonal}.ts`,
+`src/lib/date/month-range.ts`, `src/app/hidden-india/page.tsx` (real
+implementation), `src/app/destinations/[slug]/loading.tsx`. Moved:
+`FestivalGallery` → `src/components/ui/Gallery.tsx`, `NearbyDiscovery` →
+`src/components/discovery/`, `FestivalMonthFilter`/`FestivalFilterPills` →
+`src/components/ui/{MonthFilterLinks,FilterPillLinks}.tsx` (generalized
+with a `basePath` prop). Modified: `src/features/destinations/{service,
+types}.ts` (discovery feed, nearby, media wiring), `src/app/destinations/
+page.tsx` and `[slug]/page.tsx` (rewritten), `src/app/festivals/*` (updated
+imports for the moved components), `src/app/sitemap.ts` (added
+`revalidate`), `src/lib/recommendations/scoring.ts` (now imports the
+shared month-range helper), `prisma/schema.prisma` + 1 migration,
+`prisma/seed.ts` (destination categories/featured flags, a new Palolem
+Beach destination, plus a real idempotency fix — see below).
+
+### Two real bugs found and fixed this phase
+
+1. **Seed script upserts weren't actually idempotent.** `db.festival.upsert`/
+   `db.destination.upsert`'s `update` blocks only ever contained whichever
+   field had most recently been added (e.g. just `featured`), never the
+   full set. Re-running the seed against already-existing rows silently
+   left `popularity` (and others) stuck at whatever they were on first
+   insert, regardless of what the seed script's source data said. Caught
+   by literally reading the query output after a reseed, not by any
+   automated check — the destination popularity values didn't match what
+   was in `prisma/seed.ts`. Fixed by making both `update` blocks
+   comprehensive (every field the seed script owns), so re-running now
+   actually converges the database to match the source, which is the
+   entire point of an idempotent seed.
+2. **`/hidden-india` was silently frozen at build time.** No
+   `searchParams`/dynamic API on the page meant Next.js statically
+   prerendered it — the DB query ran once, at `next build`, and every
+   visitor got that same frozen HTML until the next deploy. Caught by
+   reading the build's route table (`○` vs `ƒ`), the same discipline that
+   caught Phase 3/4's runtime bugs, applied one step earlier in the
+   pipeline. Fixed with `export const dynamic = "force-dynamic"`; applied
+   the lighter-weight `export const revalidate = 3600` to `sitemap.ts`,
+   which has the identical structural risk but doesn't need per-request
+   freshness.
+
+### Tests/checks performed
+
+- `npm run typecheck`, `npm run lint`, `npm run build` — all clean; the
+  build's route table was specifically re-checked after the dynamic-
+  rendering fixes to confirm `/hidden-india` moved from `○` to `ƒ` and
+  `/sitemap.xml` picked up `Revalidate 1h`.
+- Real end-to-end verification via headless Chromium against the
+  **production build**: destination listing (desktop/mobile, month/type/
+  classification filters, section correctness), destination detail
+  (desktop/mobile, disclosure sections including the curated festival
+  connection, Save toggling, transport/accommodation conditional
+  rendering, 404), and `/hidden-india` (both sections populated, correct
+  seasonal indicators). Zero browser console errors throughout.
+
+### Known limitations
+
+- "Add to Trip" is still the Phase 3 temporary interaction state.
+- Click-level analytics on card grids remain unwired (see #10 above) —
+  consistent with Phase 4, not a new gap.
+- "Typical trip" cost is a simple heuristic, not a real estimator (see #4).
+- No automated tests — same gap noted in every prior phase.
+
+---
+
+<!-- Phase 6+ reports appended below as each phase completes. -->

@@ -127,6 +127,23 @@ station and hotel guidance. Sections built on these fields
 entirely when the fields are empty, per the spec's "do not display an
 empty section."
 
+## Destination taxonomy and featured flag (Phase 5)
+
+`DestinationCategory` mirrors `FestivalCategory` — a DB-backed "type"
+taxonomy (Nature, Heritage, Beach, Mountain, Cultural, City) rather than a
+hardcoded enum, per the spec's "do not hardcode these categories... use an
+extensible taxonomy." It deliberately **excludes** "Hidden gem" and "Major
+destination" from the spec's example type list: those describe how
+well-known a place is, which `Destination.popularity` already models —
+adding them as categories too would be a second, redundant classification
+for the same concept. `Destination.categoryId` is nullable (unlike
+`Festival.categoryId`, which is required) since it was added after real
+destination rows already existed, and a hard backfill wasn't worth forcing.
+
+`Destination.featured: Boolean` — same rationale as `Festival.featured`
+(added in Phase 4): a manual editorial signal distinct from `popularity`,
+feeding `src/features/destinations/ranking.ts`.
+
 ## Destination best-time
 
 `bestTimeStartMonth`/`bestTimeEndMonth` (+ `altTime*` for a secondary

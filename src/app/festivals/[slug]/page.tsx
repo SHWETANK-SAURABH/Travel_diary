@@ -10,9 +10,9 @@ import {
 import { resolveFestivalStatus } from "@/features/festivals/status";
 import { trackFestivalView } from "@/features/analytics/service";
 import { Container } from "@/components/layout";
-import { Badge, Disclosure, ResponsiveImage, Button } from "@/components/ui";
-import { SaveButton, VisitedButton, AddToTripButton, ShareButton } from "@/components/discovery";
-import { FestivalStatusBadge, Countdown, FestivalGallery, NearbyDiscovery } from "@/components/festivals";
+import { Badge, Disclosure, ResponsiveImage, Button, Gallery } from "@/components/ui";
+import { SaveButton, VisitedButton, AddToTripButton, ShareButton, NearbyDiscovery } from "@/components/discovery";
+import { FestivalStatusBadge, Countdown } from "@/components/festivals";
 import { siteConfig } from "@/config/site";
 
 interface PageProps {
@@ -150,7 +150,7 @@ export default async function FestivalDetailPage({ params }: PageProps) {
           <div className="mt-10">
             <h2 className="text-h2 font-display">Gallery</h2>
             <div className="mt-4">
-              <FestivalGallery images={galleryImages} festivalName={festival.name} />
+              <Gallery images={galleryImages} contentName={festival.name} />
             </div>
           </div>
         )}

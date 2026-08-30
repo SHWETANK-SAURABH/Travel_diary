@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { getFestivalDiscoveryFeed, listFestivalCategories } from "@/features/festivals/service";
 import { trackPageView } from "@/features/analytics/service";
 import { Container } from "@/components/layout";
-import { EmptyState } from "@/components/ui";
-import { FestivalCard, FestivalMonthFilter, FestivalFilterPills } from "@/components/festivals";
+import { EmptyState, MonthFilterLinks, FilterPillLinks } from "@/components/ui";
+import { FestivalCard } from "@/components/festivals";
 import type { ContentPopularity } from "@prisma/client";
 
 export const metadata: Metadata = {
@@ -51,16 +51,18 @@ export default async function FestivalsPage({ searchParams }: PageProps) {
       </p>
 
       <div className="mt-6 flex flex-col gap-4">
-        <FestivalMonthFilter activeMonth={month} baseParams={baseParams} />
+        <MonthFilterLinks basePath="/festivals" label="Browse festivals by month" activeMonth={month} baseParams={baseParams} />
         <div className="flex flex-wrap gap-x-8 gap-y-3">
-          <FestivalFilterPills
+          <FilterPillLinks
+            basePath="/festivals"
             label="Category"
             options={categories.map((c) => ({ label: c.name, value: c.slug }))}
             activeValue={category}
             paramName="category"
             baseParams={{ state, month: monthParam, popularity }}
           />
-          <FestivalFilterPills
+          <FilterPillLinks
+            basePath="/festivals"
             label="Classification"
             options={POPULARITY_OPTIONS}
             activeValue={popularity}

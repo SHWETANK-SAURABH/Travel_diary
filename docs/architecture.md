@@ -67,7 +67,7 @@ function is plain async TypeScript, scoped and typed, callable from a route
 handler, a server component, or (later) a queue worker without change.
 
 - `festivals` — public read services (list/filter/get-by-slug/viewport), status-scoped to `PUBLISHED`; since Phase 4 also owns the discovery feed (`getFestivalDiscoveryFeed`), ranking (`ranking.ts`), temporal status (`status.ts`) and geo-nearby (`getNearbyToFestival`).
-- `destinations` — same public read shape as festivals; not yet given the Phase 4 discovery-feed/ranking treatment (that's Phase 5's job).
+- `destinations` — same shape, since Phase 5: discovery feed (`getDestinationDiscoveryFeed`), ranking (`ranking.ts` — same weighting philosophy as festivals', seasonal-window match instead of temporal status), `seasonal.ts` (`isInSeason`/`formatMonthRange`) and geo-nearby (`getNearbyToDestination`).
 - `locations` — small shared helper (`getLocationIdsForState`) that resolves a state slug to itself + every child city/region id, used by both `festivals` and `destinations` for `?state=` filtering and by `map`'s state-summary panel — added once the same "festivals in this state" logic was needed in three places.
 - `map` — combines festivals + destinations into one normalized marker list for a viewport, with month-based filtering.
 - `search` — universal search across festivals/destinations/experiences/food/locations; records zero-result queries.
@@ -220,9 +220,33 @@ discovery panel in Phase 3. Phase 4 needed the same actions on the festival
 detail page, so they moved to `src/components/discovery` as
 `SaveButton`/`VisitedButton`/`AddToTripButton`/`ShareButton` (plus their
 `useSavedState`/`useVisitedState` hooks) — one implementation, not two kept
-in sync by hand. Both the map panel and `/festivals/[slug]` now import from
-there. Any future content-detail page (destinations in Phase 5) should do
-the same rather than re-implementing these.
+in sync by hand. Phase 5 followed the same move for `Gallery` (was
+`FestivalGallery`, now `src/components/ui/Gallery.tsx`), `NearbyDiscovery`
+(now `src/components/discovery`, already content-agnostic), and the
+listing-page filter links (`FestivalMonthFilter`/`FestivalFilterPills` →
+`src/components/ui/{MonthFilterLinks,FilterPillLinks}.tsx`, taking a
+`basePath` prop instead of hardcoding `/festivals`). The rule going
+forward: a second content type needing the same UI is the signal to
+generalize and relocate, not the signal to copy-paste — do it right when
+the second consumer shows up, not preemptively for a hypothetical third.
+
+## Static rendering can silently freeze a "live" content page
+
+`/hidden-india` (Phase 5) fetches straight from the database with no
+`searchParams`/`cookies()`/other dynamic API — which is exactly the
+condition under which Next.js statically prerenders a page **at build
+time** and serves that frozen HTML to every visitor until the next deploy.
+Caught by reading the `next build` route table (`○` vs `ƒ`), not by any
+test: a fresh festival added to Hidden India after deploy simply wouldn't
+appear. Fixed with `export const dynamic = "force-dynamic"`. The sitemap
+(`src/app/sitemap.ts`) has the identical structural risk — same DB call, no
+dynamic API — but doesn't need per-request freshness (crawlers don't care
+about minute-level staleness), so it got `export const revalidate = 3600`
+(ISR) instead of full dynamic rendering. General rule for this codebase:
+any page/route that queries the database directly (not through a
+`searchParams`-driven filter, which already forces dynamic rendering) needs
+one of these two exports — check the build's route table after adding a
+new one, don't assume.
 
 ## Reading URL state in a client component: `useSearchParams()`, not `window.location`
 

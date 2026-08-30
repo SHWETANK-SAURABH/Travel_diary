@@ -1,12 +1,13 @@
 import Link from "next/link";
-import { cn } from "@/components/ui/cn";
+import { cn } from "./cn";
 
 export interface FilterOption {
   label: string;
   value: string;
 }
 
-export interface FestivalFilterPillsProps {
+export interface FilterPillLinksProps {
+  basePath: string;
   label: string;
   options: FilterOption[];
   activeValue?: string;
@@ -14,14 +15,19 @@ export interface FestivalFilterPillsProps {
   baseParams: Record<string, string | undefined>;
 }
 
-/** Generic server-rendered filter pill row (category, popularity, ...) — same link-based pattern as FestivalMonthFilter, for filters that aren't the specifically-shaped month/"All Year" case. */
-export function FestivalFilterPills({ label, options, activeValue, paramName, baseParams }: FestivalFilterPillsProps) {
+/**
+ * Generic server-rendered filter pill row (category, popularity, budget,
+ * ...) — same link-based pattern as MonthFilterLinks, for filters that
+ * aren't the specifically-shaped month/"All Year" case. Shared by
+ * `/festivals` and `/destinations`.
+ */
+export function FilterPillLinks({ basePath, label, options, activeValue, paramName, baseParams }: FilterPillLinksProps) {
   function hrefFor(value: string | undefined) {
     const params = new URLSearchParams(Object.entries(baseParams).filter(([, v]) => v) as [string, string][]);
     if (value) params.set(paramName, value);
     else params.delete(paramName);
     const qs = params.toString();
-    return qs ? `/festivals?${qs}` : "/festivals";
+    return qs ? `${basePath}?${qs}` : basePath;
   }
 
   return (

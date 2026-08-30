@@ -151,6 +151,27 @@ async function main() {
     });
   }
 
+  // --- Taxonomy: destination categories -------------------------------------
+  // Deliberately excludes "Hidden gem"/"Major destination" from the product
+  // spec's example list — those describe how well-known a place is, which
+  // Destination.popularity already models.
+  const destinationCategoryDefs = [
+    { slug: "nature", name: "Nature" },
+    { slug: "heritage", name: "Heritage" },
+    { slug: "beach", name: "Beach" },
+    { slug: "mountain", name: "Mountain" },
+    { slug: "cultural", name: "Cultural" },
+    { slug: "city", name: "City" },
+  ];
+  const destinationCategory: Record<string, { id: string }> = {};
+  for (const [i, c] of destinationCategoryDefs.entries()) {
+    destinationCategory[c.slug] = await db.destinationCategory.upsert({
+      where: { slug: c.slug },
+      create: { ...c, order: i },
+      update: {},
+    });
+  }
+
   // --- Taxonomy: tags --------------------------------------------------------
   const interestDefs = [
     "History", "Food", "Arts & Culture", "Music", "Nature",
@@ -319,9 +340,16 @@ async function main() {
         verificationStatus: "ADMIN_VERIFIED",
         isSeed: true,
       },
-      // Backfills `featured` (a field added after these rows first existed)
-      // on re-run without touching anything else.
-      update: { featured: f.featured },
+      // Idempotent: re-running converges every field back to the seed
+      // definition above, not just ones added since the row first existed.
+      update: {
+        description: f.description,
+        categoryId: category[f.categorySlug].id,
+        popularity: f.popularity,
+        featured: f.featured,
+        recurrenceType: f.recurrenceType,
+        recurrenceNotes: f.recurrenceNotes,
+      },
     });
 
     await db.festivalOccurrence.upsert({
@@ -362,7 +390,9 @@ async function main() {
       locationSlug: "jaisalmer",
       latitude: 26.9124,
       longitude: 70.9127,
+      categorySlug: "heritage",
       popularity: "POPULAR" as const,
+      featured: true,
       bestTimeStartMonth: 11,
       bestTimeEndMonth: 2,
       bestTimeExplanation: "Outside this window, desert daytime heat makes fort exploration uncomfortable.",
@@ -379,7 +409,9 @@ async function main() {
       locationSlug: "alleppey",
       latitude: 9.4981,
       longitude: 76.3388,
+      categorySlug: "nature",
       popularity: "POPULAR" as const,
+      featured: true,
       bestTimeStartMonth: 11,
       bestTimeEndMonth: 2,
       bestTimeExplanation: "Cooler, drier weather after the monsoon; June–September brings heavy rain.",
@@ -396,7 +428,9 @@ async function main() {
       locationSlug: "kohima",
       latitude: 25.5667,
       longitude: 94.05,
+      categorySlug: "nature",
       popularity: "HIDDEN" as const,
+      featured: false,
       bestTimeStartMonth: 6,
       bestTimeEndMonth: 9,
       bestTimeExplanation: "The valley's namesake lilies bloom from June through September.",
@@ -413,7 +447,9 @@ async function main() {
       locationSlug: "hampi",
       latitude: 15.335,
       longitude: 76.46,
+      categorySlug: "heritage",
       popularity: "POPULAR" as const,
+      featured: false,
       bestTimeStartMonth: 10,
       bestTimeEndMonth: 2,
       bestTimeExplanation: "Avoids the extreme pre-monsoon heat common to this part of Karnataka.",
@@ -429,13 +465,34 @@ async function main() {
       locationSlug: "spiti-valley",
       latitude: 32.2461,
       longitude: 78.0349,
+      categorySlug: "mountain",
       popularity: "HIDDEN" as const,
+      featured: false,
       bestTimeStartMonth: 6,
       bestTimeEndMonth: 9,
       bestTimeExplanation: "The only months the main road passes are reliably open.",
       budgetLevel: "MID_RANGE" as const,
       approximateCostPerDay: 3000,
       tags: ["adventure", "nature", "offbeat-travel"],
+    },
+    {
+      slug: "palolem-beach",
+      name: "Palolem Beach",
+      description:
+        "A crescent-shaped bay in South Goa, calmer and less built-up than the northern beaches — hammock-strung palms, small beach shacks, and water flat enough to swim laps in.",
+      locationSlug: "panaji",
+      latitude: 15.0100,
+      longitude: 74.0233,
+      categorySlug: "beach",
+      popularity: "POPULAR" as const,
+      featured: false,
+      bestTimeStartMonth: 11,
+      bestTimeEndMonth: 2,
+      bestTimeExplanation: "Outside the November–February window the Arabian Sea monsoon makes the coast unswimmable and many shacks close entirely.",
+      budgetLevel: "BUDGET" as const,
+      approximateCostPerDay: 2500,
+      tags: ["beaches", "nature"],
+      festivalSlugs: ["goa-food-and-music-festival"],
     },
   ];
 
@@ -449,7 +506,9 @@ async function main() {
         description: d.description,
         status: "PUBLISHED",
         locationId: location[d.locationSlug].id,
+        categoryId: destinationCategory[d.categorySlug].id,
         popularity: d.popularity,
+        featured: d.featured,
         latitude: d.latitude,
         longitude: d.longitude,
         precision: "EXACT",
@@ -464,9 +523,18 @@ async function main() {
         verificationStatus: "ADMIN_VERIFIED",
         isSeed: true,
       },
-      // Backfills the festival↔destination connection (added after these
-      // rows first existed) on re-run without touching anything else.
+      // Idempotent: re-running converges every field back to the seed
+      // definition above, not just ones added since the row first existed.
       update: {
+        description: d.description,
+        categoryId: destinationCategory[d.categorySlug].id,
+        popularity: d.popularity,
+        featured: d.featured,
+        bestTimeStartMonth: d.bestTimeStartMonth,
+        bestTimeEndMonth: d.bestTimeEndMonth,
+        bestTimeExplanation: d.bestTimeExplanation,
+        budgetLevel: d.budgetLevel,
+        approximateCostPerDay: d.approximateCostPerDay,
         festivals: d.festivalSlugs ? { connect: d.festivalSlugs.map((slug) => ({ slug })) } : undefined,
       },
     });

@@ -304,6 +304,22 @@ model FestivalCategory {
   festivals Festival[]
 }
 
+// Destination "type" taxonomy (Nature/Heritage/Beach/Mountain/Cultural/
+// City) — Phase 5. Deliberately does NOT include "Hidden gem" or "Major
+// destination" from the spec's example list: those describe *how well
+// known* a place is, which `Destination.popularity` already models: adding
+// them here too would be a second, redundant classification for the same
+// concept.
+model DestinationCategory {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  description String?
+  order       Int     @default(0)
+
+  destinations Destination[]
+}
+
 model Tag {
   id       String      @id @default(cuid())
   slug     String      @unique
@@ -424,7 +440,12 @@ model Destination {
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
 
+  categoryId String?
+  category   DestinationCategory? @relation(fields: [categoryId], references: [id])
+
   popularity ContentPopularity @default(LOCAL_EMERGING)
+  // Editorial ranking signal, same rationale as Festival.featured.
+  featured   Boolean           @default(false)
 
   latitude  Float?
   longitude Float?
@@ -458,9 +479,11 @@ model Destination {
 
   @@index([status])
   @@index([locationId])
+  @@index([categoryId])
   @@index([latitude, longitude])
   @@index([budgetLevel])
   @@index([popularity])
+  @@index([featured])
 }
 
 // ---------------------------------------------------------------------------
