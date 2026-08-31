@@ -80,14 +80,25 @@ export async function mergeGuestDataIntoAccount(userId: string, guestState: Gues
     }
 
     for (const draft of guestState.trips) {
-      const existing = await tx.trip.findFirst({ where: { userId, name: draft.name } });
-      if (existing) continue; // avoid duplicating a trip the user already synced
+      // Spec §41: a name collision must never silently overwrite (or drop)
+      // the guest's trip — rename it deterministically instead, the spec's
+      // own example ("Kerala October (Imported)"). Safe against duplicate
+      // creation on a genuine retry: the whole transaction is atomic (a
+      // partial failure rolls back everything), and the caller only clears
+      // local state after a full success, so a retry only ever runs after
+      // nothing was created — this collision check only ever fires for a
+      // true pre-existing same-named trip, not a retry artifact.
+      const existing = await tx.trip.findFirst({ where: { userId, name: draft.name }, select: { id: true } });
+      const name = existing ? `${draft.name} (Imported)` : draft.name;
 
       await tx.trip.create({
         data: {
           userId,
-          name: draft.name,
+          name,
+          startDate: draft.startDate ? new Date(draft.startDate) : undefined,
+          endDate: draft.endDate ? new Date(draft.endDate) : undefined,
           days: draft.days,
+          travellerCount: draft.travellerCount,
           estimatedBudget: draft.estimatedBudget,
           items: {
             create: draft.items.map((item) => ({

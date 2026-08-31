@@ -39,6 +39,7 @@ export const analyticsEventSchema = z.object({
     "AUTH_INTERACTION",
     "VISITED",
     "GUEST_MERGE",
+    "TRIP_INTERACTION",
     "SAVE",
     "ADD_TO_TRIP",
     "TRIP_CREATED",

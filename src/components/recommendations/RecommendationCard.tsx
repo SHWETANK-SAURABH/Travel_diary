@@ -66,7 +66,7 @@ export function RecommendationCard({ kind, id, slug, name, locationName, imageUr
 
         <div className="mt-auto flex flex-wrap gap-2 pt-2">
           <SaveButton kind={kind} id={id} size="sm" source={context} />
-          <AddToTripButton id={id} size="sm" source={context} />
+          <AddToTripButton kind={kind} id={id} size="sm" source={context} />
           <TrackedLink href={href} event={clickEvent}>
             <Button variant="ghost" size="sm">
               Explore

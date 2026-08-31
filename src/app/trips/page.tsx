@@ -3,7 +3,9 @@ import Link from "next/link";
 import { auth } from "@/lib/auth";
 import { listTrips } from "@/features/trips/service";
 import { Container } from "@/components/layout";
-import { Card, CardHeader, CardTitle, Button, EmptyState } from "@/components/ui";
+import { Button } from "@/components/ui";
+import { AccountTripCard } from "./AccountTripCard";
+import { GuestTripsList } from "./GuestTripsList";
 
 export const metadata: Metadata = {
   title: "Trips",
@@ -13,51 +15,58 @@ export const metadata: Metadata = {
 export default async function TripsPage() {
   const session = await auth();
 
-  if (!session) {
-    return (
-      <Container className="py-24">
-        <h1 className="font-display text-h1">Trips</h1>
-        <p className="mt-3 max-w-xl text-ink-muted">
-          Trips can already be planned as a guest — saved locally on this device (see
-          src/lib/guest) — and synced to an account once you sign in. The trip builder UI is a
-          later phase; sign in to see any trips already saved to your account.
-        </p>
-        <Link href="/auth/sign-in?callbackUrl=/trips">
-          <Button className="mt-6">Sign in</Button>
+  return (
+    <Container className="py-12">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-h1 font-display">Your trips</h1>
+        <Link href="/trips/new">
+          <Button>Create a trip</Button>
         </Link>
-      </Container>
+      </div>
+
+      {session ? <AccountTrips userId={session.user.id} /> : <GuestTripsList />}
+    </Container>
+  );
+}
+
+async function AccountTrips({ userId }: { userId: string }) {
+  const trips = await listTrips(userId);
+
+  if (trips.length === 0) {
+    return (
+      <div className="mt-8 flex flex-col items-center gap-2 py-16 text-center">
+        <p className="text-h3 font-display text-ink">Your next adventure starts here.</p>
+        <p className="max-w-sm text-caption text-ink-muted">Create a trip to start building your itinerary.</p>
+        <div className="mt-4 flex flex-wrap justify-center gap-2">
+          <Link href="/trips/new">
+            <Button>Create a trip</Button>
+          </Link>
+          <Link href="/explore">
+            <Button variant="outline">Explore India</Button>
+          </Link>
+        </div>
+      </div>
     );
   }
 
-  const trips = await listTrips(session.user.id);
-
   return (
-    <Container className="py-12">
-      <h1 className="text-h1 font-display">Your trips</h1>
-      {trips.length === 0 ? (
-        <EmptyState
-          className="mt-8"
-          title="No trips yet"
-          description="Start building your first trip — save festivals and destinations as you explore."
-          action={
-            <Link href="/explore">
-              <Button variant="outline">Start exploring</Button>
-            </Link>
-          }
+    <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {trips.map((trip) => (
+        <AccountTripCard
+          key={trip.id}
+          trip={{
+            id: trip.id,
+            name: trip.name,
+            locationName: trip.location?.name ?? null,
+            startDate: trip.startDate?.toISOString() ?? null,
+            endDate: trip.endDate?.toISOString() ?? null,
+            days: trip.days,
+            itemCount: trip._count.items,
+            estimatedBudget: trip.estimatedBudget,
+            updatedAt: trip.updatedAt.toISOString(),
+          }}
         />
-      ) : (
-        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {trips.map((trip) => (
-            <Link key={trip.id} href={`/trips/${trip.id}`}>
-              <Card>
-                <CardHeader>
-                  <CardTitle>{trip.name}</CardTitle>
-                </CardHeader>
-              </Card>
-            </Link>
-          ))}
-        </div>
-      )}
-    </Container>
+      ))}
+    </div>
   );
 }

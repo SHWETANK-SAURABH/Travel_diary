@@ -563,3 +563,87 @@ on the *personalized/scored* path only; the anonymous fallback path
 doesn't currently reorder by visited status, a minor known gap over
 building a second reordering step for a path that already isn't
 personalized.
+
+## Phase 9: one presentational trip editor, two data-backed wrappers
+
+`src/app/trips/[id]/TripPlannerView.tsx` is the entire itinerary editor UI
+(day columns, item cards, map, budget, conflicts, suggestions, meta-edit
+form) as a single client component that knows nothing about where its data
+comes from — every mutation is a callback prop. Two thin wrappers supply
+those callbacks against two different backends:
+
+- `AccountTripEditor` — every mutation hits an API route. Reordering is
+  optimistic-local-only (no refetch: order never changes budget, conflicts,
+  or suggestions, so refetching on every arrow click would be pure waste —
+  spec §49's "do not send the entire trip object on every small reorder").
+  Everything else (add/remove item, move day, edit meta) does a local
+  optimistic update *and* a full `GET /api/trips/[id]` refresh afterward,
+  since those genuinely can move the budget/conflict/suggestion numbers and
+  there's no cheaper way to know by how much without recomputing server-side.
+- `GuestTripEditor` — the trip itself lives in the Zustand guest store
+  (Phase 8), but budget/conflicts/suggestions need data guest localStorage
+  doesn't have (destination cost data, festival occurrence dates,
+  geo-proximity queries) — so it fetches them from two no-auth endpoints,
+  `POST /api/trips/resolve` (existing, content display) and
+  `POST /api/trips/insights` (new). Both endpoints only ever return
+  already-public content data, the same trust boundary already established
+  for `/api/trips/resolve`.
+
+Both endpoints, and `GET /api/trips/[id]`'s own budget/conflict/suggestion
+fields, are backed by one function —
+`getTripInsights()` in `src/features/trips/service.ts` — so an account
+trip and a guest trip run through *identical* heuristics. It's deliberately
+DB-row-agnostic (takes a plain `{startDate, endDate, days, travellerCount,
+items}` shape, not a Prisma `Trip`), which is what makes a guest itinerary
+— which has no Trip row at all — able to use it.
+
+### Day management without a `days` field you can just increment
+
+`Trip.days`/`GuestTripDraft.days` is *derived* from `startDate`/`endDate`
+whenever both are set (`computeTripDays`, Phase 9's foundation) — so once a
+trip has explicit dates, patching `{days: n}` directly is silently
+overwritten by the recompute. "Add day" / "Remove day" therefore can't
+just increment a counter; `applyDayCountDelta()`
+(`src/lib/trip/duration.ts`) is the shared fix, used by both editors: if
+the trip has both dates, it extends/shrinks `endDate` by one day instead
+(clamped so it never crosses back before `startDate`); if it doesn't, it
+patches `days` directly, since there's nothing to overwrite it. One
+function, so guest and account trips grow/shrink identically.
+
+### Sharing: PUBLIC and UNLISTED are the same read grant
+
+`getSharedTrip()` (renamed from an earlier, narrower `getPublicTrip()`)
+matches `visibility: { in: ["PUBLIC", "UNLISTED"] } }` — both grant read
+access to `/trips/[id]/share`; they differ only in discoverability (PUBLIC
+could in principle be listed/indexed somewhere later, UNLISTED never is —
+today neither actually is, so in practice the difference is purely
+semantic intent). Getting this wrong the other way (checking `PUBLIC`
+only, which is what the field was initially named after) would have been a
+real bug: the "Share" button auto-upgrades a `PRIVATE` trip to `UNLISTED`
+(never straight to `PUBLIC` — sharing a link shouldn't silently opt a trip
+into whatever "public" comes to mean later), so a share-link-only flow
+would have 404'd on its own freshly-copied link if `getSharedTrip` still
+excluded `UNLISTED`. Caught and fixed before it shipped, not after —
+verified via a dedicated headless-browser check (private trip's `/share`
+route → the app's not-found page, no trip data leaked; freshly-unlisted
+trip's `/share` route → fully renders for a signed-out request).
+
+### A transport-level nuance in `notFound()`, discovered while testing sharing
+
+Verifying "private trip's `/share` link should 404" via a raw
+`page.request.get()` (no JS execution) initially looked like a bug: the
+HTTP status came back `200`, not `404`. It isn't one — a real browser
+correctly renders the app's not-found page (confirmed via a second check
+that actually loads and reads the page), and the *same* `curl` check
+against an unrelated, pre-existing `notFound()` call (`/destinations/
+<nonexistent-slug>`) shows the identical `200`. This is a whole-app,
+pre-Phase-9 characteristic of how Next.js's streaming response works when
+a route segment is wrapped in a `Suspense` boundary higher up the tree (the
+root layout, in this app's case): the response's HTTP status is committed
+with the initial shell, before the inner page component's `notFound()`
+call is even reached, so it can't retroactively become a 404 once the
+stream is already flowing. Functionally correct for real users (who run
+JS and see the right content); a known, cosmetic gap for anything that
+inspects the raw status code (bots, `curl`, link checkers) — noted here
+rather than "fixed" since restructuring the whole app's Suspense
+boundaries is out of scope for a trip-sharing feature.

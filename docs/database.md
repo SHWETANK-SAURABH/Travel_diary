@@ -297,6 +297,40 @@ batched-per-content-type resolver, not two, since the resolution logic
 (turn a polymorphic id into a real record + image + href) doesn't care
 which table the ids came from.
 
+## Phase 9: Trip schema additions
+
+Migration `20260831160000_trip_planner` adds four columns to `Trip`:
+`startDate`/`endDate` (`DateTime?`), `travellerCount` (`Int?`), and
+`locationId` (`String?`, FK to `Location`, `ON DELETE SET NULL ON UPDATE
+CASCADE` — matching the existing `TripItem.locationId` convention, so a
+deleted region doesn't delete the trip). `days` already existed
+(pre-Phase-9); it's now *derived* from `startDate`/`endDate` when both are
+set (`computeTripDays()`, `src/lib/trip/duration.ts`) rather than a value
+the UI sets directly — see `docs/architecture.md` for why that matters for
+"add/remove day."
+
+`Trip.locationId → Location` required a named relation
+(`@relation("TripRegion")`) on both sides, since `Location` already has an
+unrelated relation to `TripItem.locationId`; Prisma can't disambiguate two
+relations between the same two models without an explicit name.
+
+`AnalyticsEventType` gained one value, `TRIP_INTERACTION` — a single
+generic type disambiguated by `metadata.action` (`"item_reordered"`,
+`"day_changed"`, `"duplicated"`, `"deleted"`), the same shape as
+`MAP_INTERACTION`/`CALENDAR_INTERACTION`/etc. `TRIP_CREATED` and
+`ADD_TO_TRIP` already existed from earlier phases and are reused as-is.
+
+`TripItem` (pre-existing) is the same polymorphic `(contentType,
+contentId)` reference shape as `SavedContent`/`VisitedContent`, resolved
+through the same `resolveContentRecords()` helper (relocated in Phase 9
+from `src/features/users/service.ts` to `src/lib/content/resolve.ts` so
+`src/features/trips/service.ts` can use it too, without `features/trips`
+depending on `features/users`). `order` is an explicit per-day integer set
+from array position on every reorder/move (`db.$transaction` of
+`updateMany` calls) — a deliberate choice over a fragile index-shift
+scheme, since concurrent-safe reordering only works if every affected
+row's `order` is written explicitly in one transaction.
+
 ## Seed data
 
 `prisma/seed.ts` (`npm run db:seed`) creates a small, clearly-marked demo

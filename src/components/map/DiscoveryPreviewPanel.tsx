@@ -68,7 +68,7 @@ export function DiscoveryPreviewPanel({ selected }: { selected: SelectedDiscover
       <div className="mt-5 flex flex-wrap gap-2">
         <SaveButton kind={selected.kind} id={selected.id} size="sm" />
         <VisitedButton kind={selected.kind} id={selected.id} size="sm" />
-        <AddToTripButton id={selected.id} size="sm" />
+        <AddToTripButton kind={selected.kind} id={selected.id} size="sm" />
         {exploreHref && (
           <Link
             href={exploreHref}

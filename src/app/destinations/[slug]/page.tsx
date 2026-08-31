@@ -117,7 +117,7 @@ export default async function DestinationDetailPage({ params }: PageProps) {
         <div className="mt-6 flex flex-wrap gap-2">
           <SaveButton kind="destination" id={destination.id} />
           <VisitedButton kind="destination" id={destination.id} />
-          <AddToTripButton id={destination.id} />
+          <AddToTripButton kind="destination" id={destination.id} />
           <ShareButton title={destination.name} id={destination.id} />
           <Link href={mapHref}>
             <Button variant="ghost">View on Map</Button>

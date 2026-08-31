@@ -3,9 +3,19 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ContentType } from "@prisma/client";
-import type { GuestPreferences, GuestState, GuestTripDraft } from "./types";
+import { computeTripDays } from "@/lib/trip/duration";
+import type { GuestPreferences, GuestState, GuestTripDraft, GuestTripItemDraft } from "./types";
 
 const GUEST_STORAGE_KEY = "traveldiary.guest.v1";
+
+export interface CreateGuestTripInput {
+  name: string;
+  startDate?: string;
+  endDate?: string;
+  days?: number;
+  travellerCount?: number;
+  estimatedBudget?: number;
+}
 
 interface GuestStore extends GuestState {
   toggleSaved(contentType: ContentType, contentId: string): void;
@@ -14,8 +24,19 @@ interface GuestStore extends GuestState {
   isVisited(contentType: ContentType, contentId: string): boolean;
   upsertTrip(trip: GuestTripDraft): void;
   removeTrip(localId: string): void;
+  createTrip(input: CreateGuestTripInput): string;
+  updateTripMeta(localId: string, patch: Partial<CreateGuestTripInput>): void;
+  duplicateTrip(localId: string): string | null;
+  addTripItem(localId: string, item: { day: number; contentType?: ContentType; contentId?: string; notes?: string }): void;
+  removeTripItem(localId: string, itemId: string): void;
+  reorderTripItemsInDay(localId: string, day: number, orderedItemIds: string[]): void;
+  moveTripItemToDay(localId: string, itemId: string, newDay: number): void;
   setPreferences(preferences: Omit<GuestPreferences, "updatedAt">): void;
   clear(): void;
+}
+
+function touch<T extends { updatedAt: string }>(trip: T): T {
+  return { ...trip, updatedAt: new Date().toISOString() };
 }
 
 /**
@@ -87,6 +108,87 @@ export const useGuestStore = create<GuestStore>()(
 
       removeTrip(localId) {
         set((state) => ({ trips: state.trips.filter((t) => t.localId !== localId) }));
+      },
+
+      createTrip(input) {
+        const localId = crypto.randomUUID();
+        const trip: GuestTripDraft = {
+          localId,
+          name: input.name,
+          startDate: input.startDate,
+          endDate: input.endDate,
+          days: computeTripDays(input.startDate, input.endDate, input.days),
+          travellerCount: input.travellerCount,
+          estimatedBudget: input.estimatedBudget,
+          items: [],
+          updatedAt: new Date().toISOString(),
+        };
+        set((state) => ({ trips: [...state.trips, trip] }));
+        return localId;
+      },
+
+      updateTripMeta(localId, patch) {
+        set((state) => ({
+          trips: state.trips.map((t) => {
+            if (t.localId !== localId) return t;
+            const merged = { ...t, ...patch };
+            return touch({ ...merged, days: computeTripDays(merged.startDate, merged.endDate, merged.days) });
+          }),
+        }));
+      },
+
+      duplicateTrip(localId) {
+        const source = get().trips.find((t) => t.localId === localId);
+        if (!source) return null;
+        const newLocalId = crypto.randomUUID();
+        const copy: GuestTripDraft = {
+          ...source,
+          localId: newLocalId,
+          name: `${source.name} (Copy)`,
+          items: source.items.map((item) => ({ ...item, id: crypto.randomUUID() })),
+          updatedAt: new Date().toISOString(),
+        };
+        set((state) => ({ trips: [...state.trips, copy] }));
+        return newLocalId;
+      },
+
+      addTripItem(localId, item) {
+        set((state) => ({
+          trips: state.trips.map((t) => {
+            if (t.localId !== localId) return t;
+            const maxOrder = t.items.filter((i) => i.day === item.day).reduce((max, i) => Math.max(max, i.order), -1);
+            const newItem: GuestTripItemDraft = { id: crypto.randomUUID(), day: item.day, order: maxOrder + 1, contentType: item.contentType, contentId: item.contentId, notes: item.notes };
+            return touch({ ...t, items: [...t.items, newItem] });
+          }),
+        }));
+      },
+
+      removeTripItem(localId, itemId) {
+        set((state) => ({
+          trips: state.trips.map((t) => (t.localId === localId ? touch({ ...t, items: t.items.filter((i) => i.id !== itemId) }) : t)),
+        }));
+      },
+
+      reorderTripItemsInDay(localId, day, orderedItemIds) {
+        set((state) => ({
+          trips: state.trips.map((t) => {
+            if (t.localId !== localId) return t;
+            const orderIndex = new Map(orderedItemIds.map((id, index) => [id, index]));
+            const items = t.items.map((i) => (i.day === day && orderIndex.has(i.id) ? { ...i, order: orderIndex.get(i.id)! } : i));
+            return touch({ ...t, items });
+          }),
+        }));
+      },
+
+      moveTripItemToDay(localId, itemId, newDay) {
+        set((state) => ({
+          trips: state.trips.map((t) => {
+            if (t.localId !== localId) return t;
+            const maxOrder = t.items.filter((i) => i.day === newDay).reduce((max, i) => Math.max(max, i.order), -1);
+            const items = t.items.map((i) => (i.id === itemId ? { ...i, day: newDay, order: maxOrder + 1 } : i));
+            return touch({ ...t, items });
+          }),
+        }));
       },
 
       setPreferences(preferences) {

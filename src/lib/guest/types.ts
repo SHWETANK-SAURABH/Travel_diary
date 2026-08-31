@@ -13,6 +13,8 @@ export interface GuestVisitedItem {
 }
 
 export interface GuestTripItemDraft {
+  /** Client-generated id — stable identity for remove/reorder/move-day, independent of array position. */
+  id: string;
   day: number;
   order: number;
   contentType?: ContentType;
@@ -24,7 +26,10 @@ export interface GuestTripDraft {
   /** Client-generated id (e.g. crypto.randomUUID()) — replaced by a real Trip.id once synced. */
   localId: string;
   name: string;
+  startDate?: string; // ISO date
+  endDate?: string;
   days?: number;
+  travellerCount?: number;
   estimatedBudget?: number;
   items: GuestTripItemDraft[];
   updatedAt: string; // ISO timestamp

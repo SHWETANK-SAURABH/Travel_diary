@@ -33,10 +33,14 @@ export const guestStateSchema = z.object({
     z.object({
       localId: z.string().min(1),
       name: z.string().min(1).max(200),
-      days: z.number().int().positive().optional(),
+      startDate: z.string().optional(),
+      endDate: z.string().optional(),
+      days: z.number().int().positive().max(365).optional(),
+      travellerCount: z.number().int().positive().max(50).optional(),
       estimatedBudget: z.number().int().nonnegative().optional(),
       items: z.array(
         z.object({
+          id: z.string().min(1),
           day: z.number().int().positive(),
           order: z.number().int().nonnegative(),
           contentType: contentTypeSchema.optional(),

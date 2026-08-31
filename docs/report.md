@@ -1470,4 +1470,262 @@ Save-only), `src/components/discovery/contentKind.ts` (added `"food"`),
 
 ---
 
-<!-- Phase 9+ reports appended below as each phase completes. -->
+## Phase 9 — Trip Planner & Itinerary Builder
+
+**Status: complete.**
+
+### Summary
+
+Built the first complete trip planner: create/edit/duplicate/delete trips
+as a guest (localStorage) or an account (Postgres), add content from any
+destination/festival/experience/food/event page via a real "Add to Trip"
+flow, a day-by-day itinerary editor with accessible reorder/move-day
+controls, a trip-scoped map synchronized to the itinerary, a transparent
+budget-range estimate, festival date-conflict warnings, geo-proximity
+"you might also like" suggestions, and public/unlisted trip sharing. One
+presentational component (`TripPlannerView`) renders the whole editor for
+both guest and account trips; two thin wrappers supply its callbacks
+against localStorage or the API respectively. Caught and fixed one real
+bug before it shipped — sharing would have 404'd on its own freshly-copied
+link — documented in `docs/architecture.md`.
+
+### 1. Trip data architecture
+
+`Trip` (pre-existing since Phase 1) gained `startDate`/`endDate`
+(`DateTime?`), `travellerCount` (`Int?`), and `locationId` (`String?`,
+named-relation FK to `Location`) this phase. `days` is no longer a value
+the UI sets directly — it's derived from `startDate`/`endDate` whenever
+both are present (`computeTripDays()`, shared by client and server so they
+can never disagree), falling back to a manually-set value only for a
+dateless trip. `TripItem` (also pre-existing) is the same polymorphic
+`(contentType, contentId)` reference shape `SavedContent`/`VisitedContent`
+already use, plus `day`/`order`/`notes`. Every server-side trip function in
+`src/features/trips/service.ts` is scoped to `userId`, never trusting a
+client-supplied id (spec §39).
+
+### 2. Guest trip persistence
+
+`src/lib/guest/store.ts` (Zustand, `traveldiary.guest.v1`, `skipHydration:
+true` — same guest architecture as Phase 8's saves/visited) gained
+`createTrip`/`updateTripMeta`/`duplicateTrip`/`addTripItem`/
+`removeTripItem`/`reorderTripItemsInDay`/`moveTripItemToDay`. Guest trip
+items now carry a client-generated stable `id` (previously identity-less),
+needed for remove/reorder/move to target a specific item independent of
+array position. Since a guest itinerary has no server `Trip` row, its
+budget/conflict/suggestion heuristics can't be computed client-side
+(they need destination cost data, festival occurrence dates, and
+geo-proximity queries the browser can't run) — `GuestTripEditor` fetches
+them from two no-auth endpoints, `POST /api/trips/resolve` (existing) and
+`POST /api/trips/insights` (new), both scoped to already-public content
+only.
+
+### 3. Account trip persistence
+
+Full CRUD in `src/features/trips/service.ts`: `listTrips`, `getTrip`,
+`createTrip`, `updateTrip` (recomputes `days` from the merged/existing
+dates), `deleteTrip` (only cascades `Trip`/`TripItem` — never touches
+`SavedContent`/`VisitedContent`, spec §34's "save state remains
+independent from trip state"), `duplicateTrip` (new id, `"{name} (Copy)"`,
+always forced to `PRIVATE` regardless of the source's visibility — a
+duplicate never inherits public exposure automatically), plus item-level
+`addTripItem`/`removeTripItem`/`reorderTripItemsInDay`/`moveTripItemToDay`.
+`AccountTripEditor` (client) drives these through API routes, refreshing
+via `GET /api/trips/[id]` after anything that can move the derived numbers
+(see Architecture doc for why reordering specifically skips this refresh).
+
+### 4. Guest-to-account merge strategy
+
+Unchanged trigger from Phase 8 (`GuestMergeSync`, fires automatically on
+sign-in) — Phase 9 extended what it merges. Trip creation during merge now
+carries `startDate`/`endDate`/`travellerCount` and, critically, the
+itinerary items themselves (`items: { create: draft.items.map(...) }`),
+not just trip metadata. Fixed a real spec violation found while
+implementing this: on a trip-name collision the merge previously did
+`if (existing) continue` — silently *dropping* the guest's trip entirely.
+Changed to the spec's own example: rename to `` `${name} (Imported)` ``.
+Still idempotent on retry — the whole merge is one transaction (a partial
+failure rolls back everything) and local state only clears after a
+confirmed success, so the collision check only ever fires for a genuine
+pre-existing same-named trip, never a retry artifact. Verified directly:
+built a guest trip with an item, signed in via injected session, confirmed
+the trip *and* its item appeared server-side and localStorage cleared;
+re-ran the same "sign-in" against the now-empty guest state and confirmed
+no duplicate trip was created.
+
+### 5. Itinerary ordering implementation
+
+`order` is an explicit per-day integer, written from array position on
+every reorder — `reorderTripItemsInDay` runs one `db.$transaction` of
+`updateMany` calls, one per item id, rather than shifting indices (spec
+§45: "a robust ordering strategy"). Reorder controls are accessible
+up/down buttons (`TripItemCard`), not drag-and-drop (spec §13/§53) —
+`disabled` at the top/bottom of each day's list. Moving an item to a
+different day (`moveTripItemToDay`) appends it to the end of the target
+day's order rather than trying to preserve a position that doesn't exist
+in the new day yet.
+
+### 6. Day management
+
+Day count isn't a field the UI can just increment: once a trip has both
+`startDate` and `endDate` set, `computeTripDays` always recomputes `days`
+from them, silently overwriting any direct `{days: n}` patch. "Add day" /
+"Remove day" go through `applyDayCountDelta()` (`src/lib/trip/duration.ts`,
+shared by both editors) instead — it extends/shrinks `endDate` by a day
+when dates are set, or patches `days` directly when they aren't. "Remove
+day" is only ever offered on the trailing day, and only when it's empty
+(spec's own caution against silently orphaning an item on a day that no
+longer exists) — enforced in `TripPlannerView`'s render, not just by
+convention.
+
+### 7. Map integration
+
+`TripMap` (`src/components/trips/TripMap.tsx`) reuses the exact
+MapLibre/OpenFreeMap setup the Living Map (Phase 3) uses — spec §20's "do
+not build a second map system" — as a distinct, simpler component: fixed
+day-numbered markers (colour cycles per day, `DAY_COLORS`) plus a
+*dashed* line connecting them in itinerary sequence, deliberately dashed
+per spec §22 ("do not pretend lines represent actual driving routes").
+Clicking an item card or a map marker sets the same `selectedItemId` state
+in the parent (`TripPlannerView`), highlighting the corresponding card and
+giving the marker a heavier border — itinerary↔map sync in both
+directions, spec §21. Verified visually: two-item trip renders two
+numbered markers connected by a dashed line, positioned correctly relative
+to each other on the India basemap.
+
+### 8. Budget estimation
+
+`estimateTripBudget()` averages `approximateCostPerDay` across the trip's
+Destination items, multiplied by day count and traveller count, ±20% for a
+range — never a single guaranteed number (spec §25). Returns `hasData:
+false` when no item in the trip carries cost data at all, and
+`BudgetEstimate` renders nothing in that case rather than a fabricated
+"₹0 – ₹0". Verified end to end: a two-item trip with a costed destination
+showed "₹14K – ₹21K, A rough estimate, not a guaranteed price."
+
+### 9. Festival date conflict handling
+
+`checkFestivalConflicts()` compares each Festival item's most relevant
+occurrence (`pickRelevantOccurrence()`, reused from Phase 4/5) against the
+trip's own dates, returning one of four statuses per item:
+`CONFIRMED_CONFLICT` only when the occurrence's `dateConfidence` is
+`CONFIRMED` or `ADMIN_VERIFIED` *and* it falls outside the trip window;
+`UNCERTAIN` for any other confidence level falling outside the window (or
+with no date at all) — spec §27's "never overstate certainty"; `NONE` when
+it overlaps; `NO_TRIP_DATES` when the trip itself has no dates to compare
+against. All three non-`NONE` paths were verified directly: a `CONFIRMED`-
+confidence festival (Hornbill) outside trip dates showed "This festival is
+outside your current trip dates."; an `EXPECTED`-confidence festival
+(Pushkar Camel Fair) outside trip dates returned `UNCERTAIN`; the same
+festival on a trip with no dates set returned `NO_TRIP_DATES`, never a
+false conflict.
+
+### 10. Public/private sharing architecture
+
+`Trip.visibility` (`PRIVATE`/`UNLISTED`/`PUBLIC`, pre-existing) gates
+`/trips/[id]/share`, a server component with no owner-only controls
+(no edit/remove/reorder) and items whose content has since been deleted
+silently skipped (that "no longer available" messaging is for the owner
+while editing, not a stranger viewing the trip). `getSharedTrip()` grants
+read access for *either* `PUBLIC` or `UNLISTED` — see `docs/architecture.md`
+for why the initial `PUBLIC`-only version would have been a real bug given
+that clicking "Share" auto-upgrades a `PRIVATE` trip to `UNLISTED` (never
+straight to `PUBLIC`). The share page is never indexed
+(`robots: {index: false}` unconditionally) — there's no public trip
+directory this would ever surface in, and a personal itinerary (dates,
+exact locations) isn't something to hand to a search engine by default
+regardless of visibility. Verified: a private trip's `/share` link shows
+the app's not-found page with no data leaked; sharing a trip generates a
+working link that renders fully for a signed-out request.
+
+### 11. Security/authorization
+
+Every trip/item mutation route re-derives the owner from `auth()`'s
+server-side session and passes it into the service layer, which scopes
+every query by `userId` — a trip that isn't the caller's 404s (via a
+try/catch around a `findFirst` that returns nothing) rather than leaking a
+403 that would confirm the id exists. The two intentionally unauthenticated
+routes — `/api/trips/resolve` and `/api/trips/insights` — only ever
+resolve or compute against already-public content, never anything
+user-specific, the same trust boundary Phase 8 established for guest
+reads.
+
+### 12. Analytics
+
+One new `AnalyticsEventType`: `TRIP_INTERACTION`, generic +
+`metadata.action` (`"item_reordered"`, `"day_changed"`, `"duplicated"`,
+`"deleted"`) — the same shape as `MAP_INTERACTION`/`CALENDAR_INTERACTION`.
+`TRIP_CREATED` and `ADD_TO_TRIP` (both pre-existing) are reused as-is. The
+Zod `analyticsEventSchema` (`src/lib/validation/map.ts`) was updated in
+the *same* change as the Prisma enum this time — a recurring miss flagged
+in both the Phase 7 and Phase 8 reports, applied proactively here rather
+than caught after the fact.
+
+### Files created/modified
+
+New: `src/app/trips/new/`, `src/app/trips/[id]/`
+(`page.tsx`, `TripPlannerView.tsx`, `AccountTripEditor.tsx`,
+`GuestTripEditor.tsx`, `share/page.tsx`), `src/app/trips/
+{AccountTripCard,GuestTripsList}.tsx`, `src/app/api/trips/**`
+(list/create, `[id]` CRUD + GET, `duplicate`, `items` add/remove/reorder/
+move, `resolve`, `insights`), `src/components/trips/**` (`TripMap`,
+`TripItemCard`, `TripCard`, `BudgetEstimate`, `TripSuggestions`, shared
+`types.ts`), `src/lib/trip/duration.ts`, `src/lib/content/resolve.ts`
+(relocated from `features/users/service.ts`), `src/lib/validation/
+trips.ts`, `prisma/migrations/20260831160000_trip_planner/`. Rewritten:
+`src/features/trips/{service,types}.ts` (was a placeholder), `src/app/
+trips/page.tsx`, `src/components/discovery/AddToTripButton.tsx` (was a
+local-state placeholder — now the real flow), `src/lib/guest/
+{store,types,merge}.ts`, `src/lib/validation/{guest,map,index}.ts`.
+Modified: `src/features/users/{service,types}.ts` (re-export
+`resolveContentRecords`/`ResolvedContentItem` from the new shared
+location), `src/components/discovery/contentKind.ts` (shared
+`CONTENT_TYPE_LABEL`/`CONTENT_TYPE_TO_KIND`), `src/components/account/
+ContentListItem.tsx` (uses the now-shared maps), `src/app/{destinations,
+festivals}/[slug]/page.tsx`, `src/components/map/DiscoveryPreviewPanel.tsx`,
+`src/components/recommendations/RecommendationCard.tsx` (all four:
+`AddToTripButton`'s new required `kind` prop), `prisma/schema.prisma`,
+`docs/{architecture,database}.md`.
+
+### Tests/checks performed
+
+`npm run typecheck`, `npm run lint`, `npm run build` — all clean. Full
+headless-Chromium verification against the **production build**,
+including a from-scratch authenticated session (same technique as prior
+phases): guest trip creation → add items from two different content
+types → itinerary render (images/names/locations, festival-conflict
+banner) → day-move → reorder → reload-persistence → dashboard listing;
+identical flow for an account trip, plus API-level confirmation of
+persisted state after each mutation; budget estimate rendering with real
+cost data; map rendering two day-numbered markers with a dashed connecting
+line; duplicate (count +1) and delete (count -1) from the dashboard;
+guest→account merge carrying a trip *and* its item, then a retried
+"sign-in" against the already-merged (now empty) guest state producing no
+duplicate; all three non-`NONE` festival-conflict statuses
+(`CONFIRMED_CONFLICT`, `UNCERTAIN`, `NO_TRIP_DATES`) individually
+triggered and confirmed; sharing a private trip (auto-upgrades to
+`UNLISTED`, link works signed-out) and confirming a still-private trip's
+share link is blocked; mobile viewport (390×844) render of the itinerary
+editor; a regression sweep of `/explore`, `/map`, `/profile`. Zero console
+errors or failed requests in the final run, aside from one transient
+external tile-server hiccup unrelated to application code.
+
+### Known limitations
+
+- The `/trips/[id]/share` route returns HTTP `200` at the raw transport
+  level even when it's rendering the not-found page (a whole-app,
+  pre-existing Next.js streaming characteristic, not new to this phase —
+  see `docs/architecture.md`). Real users see the correct content; a raw
+  status-code check (bots, link checkers) would not observe a `404`.
+- No conflict-review UI for the guest→account trip merge, same as Phase
+  8's saves/visited merge — a name collision renames automatically
+  rather than asking the user to choose.
+- Nearby suggestions (`getTripSuggestions`) anchor on the *first*
+  itinerary item that has coordinates, not a centroid of all items — a
+  deliberate simplicity trade-off (spec §2: "simple," "not a complicated
+  ... dashboard") that can suggest less-relevant nearby content for a
+  trip that spans several far-apart regions.
+- No automated tests — same gap noted in every prior phase.
+
+---
+
+<!-- Phase 10+ reports appended below as each phase completes. -->

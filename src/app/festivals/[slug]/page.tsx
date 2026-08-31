@@ -156,7 +156,7 @@ export default async function FestivalDetailPage({ params }: PageProps) {
         <div className="mt-6 flex flex-wrap gap-2">
           <SaveButton kind="festival" id={festival.id} />
           <VisitedButton kind="festival" id={festival.id} />
-          <AddToTripButton id={festival.id} />
+          <AddToTripButton kind="festival" id={festival.id} />
           <ShareButton title={festival.name} id={festival.id} />
           <Link href={mapHref}>
             <Button variant="ghost">View on Map</Button>

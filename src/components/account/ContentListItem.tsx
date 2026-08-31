@@ -1,24 +1,8 @@
 import Link from "next/link";
 import { ResponsiveImage } from "@/components/ui";
 import { SaveButton, VisitedButton } from "@/components/discovery";
-import type { DiscoveryKind } from "@/components/discovery/contentKind";
+import { CONTENT_TYPE_LABEL, CONTENT_TYPE_TO_KIND } from "@/components/discovery/contentKind";
 import type { ResolvedContentItem } from "@/features/users/types";
-
-const TYPE_LABEL: Record<ResolvedContentItem["contentType"], string> = {
-  FESTIVAL: "Festival",
-  DESTINATION: "Destination",
-  EXPERIENCE: "Experience",
-  FOOD: "Food",
-  EVENT: "Event",
-};
-
-const KIND_FOR_TYPE: Record<ResolvedContentItem["contentType"], DiscoveryKind> = {
-  FESTIVAL: "festival",
-  DESTINATION: "destination",
-  EXPERIENCE: "experience",
-  FOOD: "food",
-  EVENT: "event",
-};
 
 /** One row in the profile's Saved/Visited lists — image, name, type/location, and the same Save/Visited toggle used everywhere else, so removing an item is possible right from the list. */
 export function ContentListItem({ item, action }: { item: ResolvedContentItem; action: "save" | "visited" }) {
@@ -31,7 +15,7 @@ export function ContentListItem({ item, action }: { item: ResolvedContentItem; a
       )}
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-ink">{item.name}</p>
-        <p className="truncate text-caption text-ink-muted">{[TYPE_LABEL[item.contentType], item.locationName].filter(Boolean).join(" · ")}</p>
+        <p className="truncate text-caption text-ink-muted">{[CONTENT_TYPE_LABEL[item.contentType], item.locationName].filter(Boolean).join(" · ")}</p>
       </div>
     </div>
   );
@@ -45,7 +29,7 @@ export function ContentListItem({ item, action }: { item: ResolvedContentItem; a
       ) : (
         <div className="min-w-0 flex-1 opacity-80">{inner}</div>
       )}
-      {action === "save" ? <SaveButton kind={KIND_FOR_TYPE[item.contentType]} id={item.id} size="sm" /> : <VisitedButton kind={KIND_FOR_TYPE[item.contentType]} id={item.id} size="sm" />}
+      {action === "save" ? <SaveButton kind={CONTENT_TYPE_TO_KIND[item.contentType]} id={item.id} size="sm" /> : <VisitedButton kind={CONTENT_TYPE_TO_KIND[item.contentType]} id={item.id} size="sm" />}
     </div>
   );
 }

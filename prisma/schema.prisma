@@ -147,6 +147,7 @@ enum AnalyticsEventType {
   AUTH_INTERACTION
   VISITED
   GUEST_MERGE
+  TRIP_INTERACTION
   SAVE
   ADD_TO_TRIP
   TRIP_CREATED
@@ -304,6 +305,7 @@ model Location {
   foods        Food[]
   events       Event[]
   tripItems    TripItem[]
+  trips        Trip[]        @relation("TripRegion")
 
   @@index([type])
   @@index([parentId])
@@ -658,7 +660,7 @@ model VisitedContent {
 }
 
 // ---------------------------------------------------------------------------
-// Trips — V1 data model only, no UI yet.
+// Trips — the itinerary builder (Phase 9).
 // ---------------------------------------------------------------------------
 
 model Trip {
@@ -666,10 +668,25 @@ model Trip {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  name            String
-  visibility      TripVisibility @default(PRIVATE)
+  name       String
+  visibility TripVisibility @default(PRIVATE)
+
+  // Dates are the source of truth for duration when both are set — `days`
+  // is derived from them (see computeTripDays() in
+  // src/features/trips/service.ts) and only stands alone for a guest's
+  // quick "just the day count, no exact dates yet" trip.
+  startDate DateTime?
+  endDate   DateTime?
+  days      Int?
+
+  travellerCount  Int?
   estimatedBudget Int?
-  days            Int?
+
+  // The trip's overall destination/region (e.g. "Kerala") — distinct from
+  // each TripItem's own `locationId`, which is the specific place that one
+  // item is at. Optional: a trip can span multiple regions.
+  locationId String?
+  location   Location? @relation("TripRegion", fields: [locationId], references: [id])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -677,6 +694,7 @@ model Trip {
   items TripItem[]
 
   @@index([userId])
+  @@index([locationId])
 }
 
 model TripItem {

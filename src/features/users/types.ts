@@ -1,15 +1,6 @@
-import type { BudgetLevel, ContentType, TravelStyle } from "@prisma/client";
+import type { BudgetLevel, TravelStyle } from "@prisma/client";
 
-/** A resolved Saved/VisitedContent row — see resolveContentRecords() in service.ts. `href`/`slug` are null for content types with no public detail page yet (Experience, Food, Event). */
-export interface ResolvedContentItem {
-  contentType: ContentType;
-  id: string;
-  name: string;
-  slug: string | null;
-  href: string | null;
-  locationName: string | null;
-  imageUrl: string | null;
-}
+export type { ResolvedContentItem } from "@/lib/content/resolve";
 
 export interface UpdatePreferenceInput {
   travelDateStart?: Date;
