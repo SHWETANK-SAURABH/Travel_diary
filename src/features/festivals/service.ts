@@ -136,9 +136,9 @@ export async function getFestivalBySlug(slug: string) {
       travellerFitTags: true,
       occurrences: { orderBy: { year: "desc" }, take: 3 },
       location: { include: { parent: true } },
-      foods: { select: { id: true, slug: true, name: true, description: true, region: true } },
-      experiences: { select: { id: true, slug: true, name: true, description: true, category: true } },
-      destinations: { select: { id: true, slug: true, name: true, popularity: true } },
+      foods: { where: { status: "PUBLISHED" }, select: { id: true, slug: true, name: true, description: true, region: true } },
+      experiences: { where: { status: "PUBLISHED" }, select: { id: true, slug: true, name: true, description: true, category: true } },
+      destinations: { where: { status: "PUBLISHED" }, select: { id: true, slug: true, name: true, popularity: true } },
       events: { orderBy: { date: "asc" } },
     },
   });

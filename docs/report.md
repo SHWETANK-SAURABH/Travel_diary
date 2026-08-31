@@ -1728,4 +1728,259 @@ external tile-server hiccup unrelated to application code.
 
 ---
 
-<!-- Phase 10+ reports appended below as each phase completes. -->
+## Phase 10 — Admin CMS & Content Operations
+
+**Status: complete.**
+
+### Summary
+
+Built the first production admin CMS: full create/edit/publish/archive for
+Festivals, Destinations, Experiences, and Food; Location management with
+hierarchy-corruption guards; URL-reference Media management; Festival/
+Destination category and Tag taxonomy management (with duplicate-name
+prevention); a Verification queue surfacing exactly what needs a human
+look; an admin audit log; and a real dashboard. Authorization is
+defense-in-depth (route-level via the existing `src/proxy.ts`, layout-level
+via a second independent session check, and service-level via
+`requireAdmin()` on every mutation). Found and fixed one real, if narrow,
+gap along the way: `Experience`/`Food` had no publish/draft lifecycle at
+all before this phase — every row was implicitly public — and one
+pre-existing asymmetry in `getFestivalBySlug`'s `destinations` relation
+missing the status filter its `getDestinationBySlug` counterpart already
+had.
+
+### 1. Admin architecture
+
+Admin mutations use Next.js Server Actions (`"use server"` files under
+each `src/app/admin/<entity>/actions.ts`), not API routes — a deliberate,
+documented departure from every prior phase's convention (full reasoning
+in `docs/architecture.md`): admin forms carry nested array state
+(tag/relationship id lists) that doesn't serialize cleanly through
+`FormData`, and Next.js 16's own guidance treats Server Actions as the
+current idiom for this exact shape of problem. The public product's API
+routes are untouched. Each domain gets its own `admin-service.ts`
+(`src/features/<domain>/admin-service.ts`) alongside its existing
+public-read `service.ts` — every function takes `session` as its first
+argument, asserts `requireAdmin(session)` as its first line, and records
+an audit entry after a successful mutation. List pages are server
+components reading `searchParams` for search/filter/pagination; edit
+pages fetch once server-side and hand typed data to a client form.
+
+### 2. Authorization model
+
+Three independent layers, not one shared assumption:
+
+1. **`src/proxy.ts`** (pre-existing since Phase 2) — route-level gate on
+   `/admin/:path*`, redirects to sign-in unless `session.user.role ===
+   "ADMIN"`.
+2. **`src/app/admin/layout.tsx`** (new) — a second, independent session
+   check wrapping every admin page, so the guard doesn't depend solely on
+   the proxy matcher staying correctly scoped.
+3. **`requireAdmin()`** (`src/features/admin/service.ts`, pre-existing,
+   now the shared pattern for every admin service function and Server
+   Action) — re-derives and re-checks the session at the point of
+   mutation itself, the layer that actually matters per Next.js's own
+   security guidance: "render-time gating is not a security boundary."
+
+Verified directly: an anonymous request to `/admin` gets a 307 to
+sign-in; a signed-in non-admin gets the same 307; a signed-in admin gets
+200 and the real dashboard.
+
+### 3. CMS entities supported
+
+Festivals, Destinations, Experiences, Food, Locations, Media, Festival
+Categories, Destination Categories (types), Tags — matching spec §1's
+list exactly, plus Featured-content flags and Verification status/queue.
+Experience and Food CMS are deliberately simpler single-page forms (no
+tabs) per spec §16's own "keep the interface simpler than Festival/
+Destination CMS"; Festival and Destination CMS are full tabbed forms
+(Basic/Location/Dates/Content/Media/Taxonomy/Verification for festivals;
+Basic/Location/Seasonal/Budget/Relationships/Media/Taxonomy for
+destinations).
+
+### 4. Publishing workflow
+
+`ContentStatus` (`DRAFT | PUBLISHED | ARCHIVED`) already existed on
+Festival/Destination since Phase 1; this phase adds it to Experience and
+Food, which had no publish state at all before now (every existing row
+implicitly public). New rows default to `DRAFT`; existing seeded rows
+were backfilled to `PUBLISHED` in the same migration so nothing already
+live silently vanished. Every public read path that touches Experience/
+Food was found and updated to filter `status: "PUBLISHED"` — the
+top-level list/search/map queries plus the *nested* relation includes on
+festival/destination detail pages, where the gap would have been easiest
+to miss. One quick-action per admin table row (Publish/Unpublish/Archive)
+avoids a full edit-page round trip for the common case. Verified: a draft
+festival is absent from `/festivals` and its own `/festivals/[slug]`
+until published, appears immediately after publishing, and disappears
+again after archiving — checked via raw unauthenticated fetches of the
+public routes, not UI-level absence alone.
+
+### 5. Verification workflow
+
+`/admin/verification` queries live data directly — no separate
+"verification" storage of its own beyond fields that already existed
+(`FestivalOccurrence.dateConfidence`, `Destination.verificationStatus`,
+`lastVerifiedAt`, and a `Media` existence check per content id) — into
+seven queues: festivals missing dates, festivals with uncertain dates,
+unverified destinations, festivals/destinations missing images, and
+festivals/destinations not verified in 180 days ("needs re-review," never
+an "incorrect" claim — spec §34's own caution). Every row links straight
+to its edit page. Festival verification (status/source) and destination
+best-time verification are separate, purpose-built controls on their
+respective edit pages, each writing `lastVerifiedAt` on save.
+
+### 6. Media architecture
+
+`src/lib/media/storage.ts` (Phase 1) already defines the real-storage
+adapter shape but deliberately leaves `getUploadUrl()`/`deleteObject()`
+throwing, since no storage credentials exist in this environment —
+building a signed-upload flow that can't actually be exercised would be
+worse than being explicit about the gap. The admin Media CMS accepts a
+pasted image URL directly (the same shape seed data already uses) rather
+than fake-implementing upload UI around a non-functional adapter. Alt
+text is a required-in-spirit field with a placeholder example rather than
+"image.jpg" (spec §22); order is a plain integer, no drag-reorder.
+Wiring a real storage provider later is a configuration change (env vars
++ the two adapter methods + a `next.config.ts` remote pattern), not an
+admin-UI change.
+
+### 7. Relationship management
+
+One component, `src/components/admin/RelationPicker.tsx` — a debounced
+typeahead against `GET /api/admin/search` (admin-gated, deliberately
+searches all content regardless of publish status) rendering removable
+chips, exactly the `[Hornbill Festival ×] [Add festival]` shape spec §40
+sketches. Used identically for every festival↔destination/experience/
+food connection (all pre-existing many-to-many relations — no new join
+tables needed), every tag assignment, and single-select location/category
+pickers. No admin ever types an id.
+
+### 8. Audit log implementation
+
+New `AuditLog` model + `src/lib/audit/index.ts`, deliberately mirroring
+`src/lib/analytics`'s three-layer shape (input type, `db`-backed recorder,
+one call per mutation site) as a *pattern*, not an extension of that
+table — spec §47 is explicit that admin actions are operational, not
+product analytics. Every admin service function calls `audit.record()`
+immediately after a successful mutation with `action`, `entityType`,
+`entityId`, a denormalized `entityLabel` (so an entry stays legible after
+the entity is later renamed/deleted), and `metadata` for meaningful
+before/after values — used concretely for destination best-time overrides
+(spec §15's "preserve the distinction between system suggestion and
+admin decision," implemented by reusing the existing `bestTimeSource`
+provenance field plus capturing the *prior* value in the audit metadata,
+rather than adding parallel storage columns — full reasoning in
+`docs/architecture.md`). `/admin/audit` lists every entry, newest first,
+linking back to the relevant edit page. A failed audit write never blocks
+or rolls back the actual admin mutation.
+
+### 9. Cache invalidation strategy
+
+The public site's content pages are already `force-dynamic` (no
+server-side caching at all, per `docs/architecture.md`'s pre-existing
+caching model) — an admin publish/archive is visible on the next request
+with no invalidation needed. `revalidatePath(...)` is still called after
+every admin mutation, targeting the relevant admin list/detail routes, so
+the Next.js client router cache doesn't show stale admin data on the next
+in-app navigation. The one path with real caching, `sitemap.xml`
+(`revalidate: 3600`), is left on its existing hourly cycle rather than
+force-invalidated — consistent with the existing doc's own reasoning that
+crawlers don't need minute-level sitemap freshness.
+
+### 10. Security controls
+
+Every admin mutation re-verifies auth+role independently of the route
+(§2 above). Ownership/existence checks return 404-shaped "not found"
+errors rather than leaking existence via 403. `friendlyDbError()`
+(`src/features/admin/service.ts`) translates Postgres foreign-key
+violations (P2003 — e.g. deleting a Location still referenced by content)
+into an actionable message and swallows every other raw DB error into a
+generic one, so a stack trace never reaches the client (spec §45).
+Location hierarchy mutations run a cycle check (`assertNoCycle`) before
+reparenting, so an admin can't make a location its own ancestor. Category/
+tag creation does a case-insensitive name check before insert (the DB
+only enforces unique slugs). No new file-upload attack surface exists,
+since there is no binary upload path (§6 above) — the one risk a URL-
+reference field carries (arbitrary external URLs rendered as `<img>`) is
+the same trust level the app already extends to seed data's image URLs.
+
+### 11. Files created/modified
+
+New: `prisma/migrations/20260831180000_admin_cms/`, `src/lib/slug.ts`,
+`src/lib/audit/`, `src/lib/validation/admin.ts`, `src/features/admin/
+{constants,verification}.ts` (+ `service.ts` extended), `src/features/
+{festivals,destinations,experiences,food,locations,media,taxonomy}/
+admin-service.ts`, `src/components/ui/Textarea.tsx`, `src/components/
+admin/` (`RelationPicker`, `AdminTable`, `StatusPill`, `StatusQuickActions`,
+`AdminSidebar`), `src/app/admin/layout.tsx`, `src/app/admin/{festivals,
+destinations,experiences,food,locations,media,categories,tags,
+verification,audit}/**` (list/new/[id] pages, forms, `actions.ts` per
+entity), `src/app/api/admin/search/route.ts`. Rewritten: `src/app/admin/
+page.tsx` (real dashboard). Modified: `prisma/schema.prisma` (Experience/
+Food status+featured, Tag archived, AuditLog+AuditEntityType), `src/
+features/{festivals,destinations,map,search}/service.ts` and `src/app/api/
+map/discovery/route.ts` (added the missing `status: "PUBLISHED"` filters
+described in #4), `src/lib/validation/index.ts`, `src/components/ui/
+index.ts`, `docs/{architecture,database}.md`.
+
+### Tests/checks performed
+
+`npm run typecheck`, `npm run lint`, `npm run build` — all clean. Full
+headless-Chromium verification against the **production build** with two
+from-scratch sessions (a fresh `ADMIN`-role user and a fresh `USER`-role
+user, same direct-session-creation technique as every prior phase):
+anonymous/non-admin/admin authorization at `/admin`; dashboard rendering
+real counts and a "needs attention" queue; a complete festival lifecycle
+end to end — create as draft → confirm absent from `/festivals` (raw
+fetch) → publish → confirm present → add a confirmed occurrence (date
+displayed correctly) → add an image with alt text via the Media tab →
+update verification status → archive → confirm absent again; a complete
+destination lifecycle — create → override best-time months (confirmed
+"Admin-overridden" badge + audit log entry with the prior value) → set
+budget → publish → confirm present on `/destinations`; Location deletion
+correctly blocked (disabled) for a location with sub-locations; category
+creation correctly blocked on a case-insensitive duplicate name; tag
+creation/visibility; the verification queue rendering real, populated
+data across all seven sub-queues; the audit log showing entries for both
+the festival and destination test runs with correct labels; a regression
+sweep of `/festivals`, `/destinations`, `/map`, `/trips`; and a mobile
+viewport (390×844) render of an admin list page. Zero console errors in
+the final run. Two rounds of test-script-only bugs were found and fixed
+during this verification (a URL-matching regex that prematurely matched
+`/admin/festivals/new` itself, and a locator that searched for a field's
+*hint* text instead of its actual placeholder) — both confirmed as test
+issues, not application bugs, by direct DB/screenshot inspection before
+being written off.
+
+### Remaining limitations
+
+- No real file upload — Media is URL-reference only, since no storage
+  credentials exist in this environment (see #6). Documented as a
+  configuration gap, not a missing feature.
+- Experience/Food categories remain free-form strings (`Experience.
+  category`, `Food.region`), not real taxonomy tables like Festival/
+  Destination categories — spec §23 asks for "Experience categories" and
+  "Food categories" management, but neither model had a category table
+  to manage; adding one for two content types with no other taxonomy
+  need today was judged out of scope for this phase's "do not build an
+  enterprise CMS" restraint. Tags (which already span all four content
+  types) cover most of the practical need.
+- No bulk operations (multi-select publish/assign-tag across many rows
+  at once) — every action is per-row. Spec §37 explicitly allows this to
+  be a V1 gap ("V1 *may* support limited bulk operations").
+- No slug-change redirect strategy (spec §29) — changing a published
+  slug does not currently preserve the old URL. No redirect mechanism
+  (e.g. a stored slug-history table) exists yet anywhere in the app to
+  build this on.
+- Content preview reuses the real public page for already-published
+  content (a genuine, zero-duplication preview) but has no dedicated
+  preview renderer for drafts — spec §41's "avoid maintaining two
+  separate rendering systems" was judged to outweigh building a second,
+  parallel draft-only renderer; a draft's page copy shows "Publish to
+  preview the live page" instead.
+- No automated tests — same gap noted in every prior phase.
+
+---
+
+<!-- Phase 11+ reports appended below as each phase completes. -->

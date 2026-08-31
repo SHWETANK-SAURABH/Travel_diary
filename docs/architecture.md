@@ -647,3 +647,143 @@ JS and see the right content); a known, cosmetic gap for anything that
 inspects the raw status code (bots, `curl`, link checkers) — noted here
 rather than "fixed" since restructuring the whole app's Suspense
 boundaries is out of scope for a trip-sharing feature.
+
+## Phase 10: the Admin CMS is Server Actions, not API routes — a deliberate departure
+
+Every prior phase's mutations went through `src/app/api/**/route.ts` —
+`fetch()` from a client component, `NextResponse.json(...)` back. The
+admin CMS instead uses [Server Actions](https://nextjs.org/docs/app/guides/server-actions)
+(`"use server"` files under each `src/app/admin/<entity>/actions.ts`),
+called directly from client form components as plain async functions.
+Two reasons this isn't "inconsistent for its own sake":
+
+1. **The forms don't serialize cleanly to `FormData`.** Every admin form
+   carries nested array state (`tagIds: string[]`, relationship chip
+   lists) that a native `<form action>` + `FormData` parse would need
+   manual reconstruction for anyway — passing a plain typed object
+   straight to a Server Action (an explicitly supported invocation shape,
+   not a hack) is simpler and type-safe end to end, no `FormData.get()`
+   parsing/casting at all.
+2. **Next.js 16's own guidance treats this as the current idiom** for
+   exactly this shape of problem (form mutation → redirect or
+   re-render) — see `node_modules/next/dist/docs/01-app/02-guides/
+   server-actions.md`, consulted before writing any of this phase's code
+   per this repo's own `AGENTS.md`. Its security section is followed
+   directly: every action re-derives the session itself
+   (`await auth()`), authorizes independently, and every underlying
+   service function *also* calls `requireAdmin()` as its own first line —
+   two independent checks, not one shared assumption, matching the doc's
+   explicit "render-time gating is not a security boundary."
+
+The public product's existing API-route convention is untouched — this
+is additive, scoped entirely to `/admin`, not a retroactive migration.
+
+## Admin CMS shape: one service function per mutation, one thin action wrapper
+
+`src/features/<domain>/admin-service.ts` (new, alongside each domain's
+existing public-read `service.ts`) holds every admin mutation as a plain
+async function taking `(session, ...)` as its first argument(s):
+`requireAdmin(session)` first line (throws `UnauthorizedError` otherwise —
+the same assertion function Phase 1's `verifyFestivalOccurrence`
+established, now reused everywhere rather than being its only call site),
+then the actual `db` write, then an `audit.record(...)` call. The
+`"use server"` action in `src/app/admin/<entity>/actions.ts` is
+deliberately thin: re-derive the session, `zod`-validate the input
+(`src/lib/validation/admin.ts`), call the service function, `catch` and
+translate any thrown error into `{ok: false, error: string}` (never a raw
+stack trace — spec §45), `revalidatePath(...)` on success. Every list page
+is a server component reading `searchParams` for
+search/filter/pagination (never client-side filtering over an
+unbounded fetch — spec §38/§49); every detail/edit page is a server
+component that fetches once and hands typed initial data to a client
+form component.
+
+## One `RelationPicker`, not a raw ID field, anywhere a relationship exists
+
+Spec §12/§40 explicitly forbids asking an admin to type an id — every
+festival↔destination/experience/food connection, every tag assignment,
+and every single-select location/category picker goes through one
+component, `src/components/admin/RelationPicker.tsx`: a debounced
+typeahead (mirrors `HeaderSearch.tsx`'s exact debounce-and-fetch shape —
+every `setState` call lives inside the fetch's own `.then()`, never
+synchronously in the effect body, which is what keeps a stale in-flight
+request from clobbering a newer one's result) against one shared
+endpoint, `GET /api/admin/search?type=...&q=...` — admin-gated,
+deliberately searching *all* content regardless of publish status (an
+admin connecting two drafts together is normal; every public search path
+in the app still filters to `PUBLISHED` only). Selected items render as
+removable chips (`[Hornbill Festival ×]`), matching the spec's own sketch
+exactly.
+
+## Experience/Food gained a publish/archive lifecycle they never had
+
+`Experience` and `Food` had no `status` field before this phase — every
+row in the database was implicitly "live" the instant it existed, and no
+public query ever filtered them by anything resembling draft/published.
+Adding `status ContentStatus @default(DRAFT)` (see `docs/database.md` for
+the migration/backfill details) meant finding and fixing *every* public
+read path that returns Experience/Food data, not just adding the column:
+`getFestivalBySlug`/`getDestinationBySlug`'s nested `experiences`/`foods`
+relation includes, `getFestivalBySlug`'s `destinations` include (found to
+be missing its own `status: "PUBLISHED"` filter in the same pass — a
+pre-existing asymmetry with `getDestinationBySlug`'s `festivals` include,
+which already had one — fixed here since it's the same bug class this
+phase is explicitly closing), the map viewport query, the universal
+search service (both its primary and typo-tolerant fallback queries), and
+the map's single-item preview route. Verified directly: a draft
+Experience/Food item created via the admin form does not appear on any
+public page that would otherwise list it, confirmed via a raw
+(unauthenticated) fetch of the relevant public route rather than trusting
+UI-level absence alone.
+
+## Media stays URL-reference-only — there is no binary upload path in this environment
+
+`src/lib/media/storage.ts` (Phase 1) already defines the adapter shape for
+real object storage (S3-compatible: endpoint/region/bucket/CDN base URL,
+all read from `MEDIA_STORAGE_*` env vars) — but `getUploadUrl()` and
+`deleteObject()` deliberately `throw` rather than fake-implement, since no
+storage credentials exist in this environment and shipping a
+signed-URL flow that can't actually be exercised or tested would be worse
+than being explicit about the gap. The admin Media CMS therefore accepts
+a pasted image URL directly — the exact same shape seed data already
+uses (`Media.url` pointing at `picsum.photos`) — rather than building
+upload UI around an adapter that cannot complete a real upload. Wiring a
+real provider is a configuration change (set the env vars, implement the
+two adapter methods against the chosen provider's SDK, add its host to
+`next.config.ts`'s `images.remotePatterns`) rather than an admin-UI
+change, by design.
+
+## Audit log: a parallel system to analytics, not an extension of it
+
+`AuditLog` (schema, `docs/database.md`) and `src/lib/audit/index.ts`
+mirror `src/lib/analytics`'s exact three-layer shape (input interface,
+`db`-backed recorder, one call per mutation site) deliberately — the
+*pattern* is reused, the *table* is not. Spec §47 is explicit that admin
+actions are "operational rather than product analytics" and should not
+flow through the same pipe; `AuditEntityType` also has to cover strictly
+more ground than `AnalyticsEventType`'s `ContentType` (Location, Media,
+both category tables, Tag — none of which are analytics subjects). A
+failed audit write never blocks or rolls back the admin's actual mutation
+(`audit.record()` swallows its own errors, same as `analytics.track()`)
+— operational logging should never be why a real edit fails to save.
+
+## Best-time "system suggestion vs. admin decision": reused an existing field rather than adding parallel storage
+
+Spec §15 asks to "preserve the distinction between system suggestion and
+admin decision" when an admin overrides a destination's best-time
+recommendation. `Destination.bestTimeSource: VerificationStatus`
+(`UNVERIFIED | AI_GENERATED | ADMIN_VERIFIED | ADMIN_OVERRIDDEN`) already
+existed and already encodes exactly this distinction as *provenance* of
+whatever value currently sits in `bestTimeStartMonth`/`bestTimeEndMonth` —
+`UNVERIFIED`/`AI_GENERATED` reads as "system suggestion," `ADMIN_VERIFIED`/
+`ADMIN_OVERRIDDEN` reads as "admin decision." Rather than adding a second,
+parallel set of columns to store "the original system suggestion"
+alongside the current value (real schema growth for a case spec §36
+explicitly discourages building "a full Git-like versioning system" for),
+`adminUpdateDestination` auto-sets `bestTimeSource: "ADMIN_OVERRIDDEN"`
+whenever the months actually change, and records the *prior* value
+(months + source) in the audit log's `metadata.before` — enough history
+to answer "what did the system say before an admin changed it," without
+duplicate live storage. Verified: overriding a destination's best-time
+months flips its badge to "Admin-overridden" and the audit log shows the
+prior months/source in that entry's metadata.

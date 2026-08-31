@@ -100,8 +100,8 @@ export async function getDestinationBySlug(slug: string) {
       category: true,
       tags: true,
       location: { include: { parent: true } },
-      foods: { select: { id: true, slug: true, name: true, description: true, region: true } },
-      experiences: { select: { id: true, slug: true, name: true, description: true, category: true } },
+      foods: { where: { status: "PUBLISHED" }, select: { id: true, slug: true, name: true, description: true, region: true } },
+      experiences: { where: { status: "PUBLISHED" }, select: { id: true, slug: true, name: true, description: true, category: true } },
       festivals: {
         where: { status: "PUBLISHED" },
         select: { id: true, slug: true, name: true, popularity: true, category: { select: { name: true } } },

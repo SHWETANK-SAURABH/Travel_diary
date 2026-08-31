@@ -136,12 +136,12 @@ export async function search(query: string, userId?: string): Promise<SearchResp
       take: 20,
     }) as Promise<DestinationRow[]>,
     db.experience.findMany({
-      where: { OR: [{ name: nameFilter }, { location: { name: nameFilter } }, { tags: { some: { name: nameFilter } } }, { description: nameFilter }] },
+      where: { status: "PUBLISHED", OR: [{ name: nameFilter }, { location: { name: nameFilter } }, { tags: { some: { name: nameFilter } } }, { description: nameFilter }] },
       select: { id: true, slug: true, name: true, location: { select: { name: true } } },
       take: 20,
     }) as Promise<ExperienceRow[]>,
     db.food.findMany({
-      where: { OR: [{ name: nameFilter }, { tags: { some: { name: nameFilter } } }, { description: nameFilter }] },
+      where: { status: "PUBLISHED", OR: [{ name: nameFilter }, { tags: { some: { name: nameFilter } } }, { description: nameFilter }] },
       select: { id: true, slug: true, name: true, region: true },
       take: 20,
     }) as Promise<FoodRow[]>,
@@ -193,7 +193,7 @@ export async function search(query: string, userId?: string): Promise<SearchResp
     }
     if (experienceFuzzyIds.length > 0) {
       const rows = (await db.experience.findMany({
-        where: { id: { in: experienceFuzzyIds } },
+        where: { id: { in: experienceFuzzyIds }, status: "PUBLISHED" },
         select: { id: true, slug: true, name: true, location: { select: { name: true } } },
       })) as ExperienceRow[];
       experiences = experienceFuzzyIds.map((id) => rows.find((r) => r.id === id)).filter((r): r is ExperienceRow => Boolean(r));
@@ -201,7 +201,7 @@ export async function search(query: string, userId?: string): Promise<SearchResp
     }
     if (foodFuzzyIds.length > 0) {
       const rows = (await db.food.findMany({
-        where: { id: { in: foodFuzzyIds } },
+        where: { id: { in: foodFuzzyIds }, status: "PUBLISHED" },
         select: { id: true, slug: true, name: true, region: true },
       })) as FoodRow[];
       foods = foodFuzzyIds.map((id) => rows.find((r) => r.id === id)).filter((r): r is FoodRow => Boolean(r));

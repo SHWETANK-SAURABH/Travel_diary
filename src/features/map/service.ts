@@ -21,7 +21,7 @@ export async function getViewportContent(query: MapViewportQuery): Promise<MapDi
     listFestivalsInViewport(box),
     listDestinationsInViewport(box),
     db.experience.findMany({
-      where: { ...boundingBoxWhere(box) },
+      where: { status: "PUBLISHED", ...boundingBoxWhere(box) },
       select: { id: true, slug: true, name: true, latitude: true, longitude: true },
       take: 500,
     }),

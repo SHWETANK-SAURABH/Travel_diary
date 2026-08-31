@@ -331,6 +331,39 @@ from array position on every reorder/move (`db.$transaction` of
 scheme, since concurrent-safe reordering only works if every affected
 row's `order` is written explicitly in one transaction.
 
+## Phase 10: Admin CMS schema additions
+
+Migration `20260831180000_admin_cms` closes two gaps `ContentStatus`
+(`DRAFT | PUBLISHED | ARCHIVED`) had left since Phase 1: `Experience` and
+`Food` gain `status ContentStatus @default(DRAFT)` and `featured Boolean
+@default(false)`, matching `Festival`/`Destination`. New rows default to
+`DRAFT`; every *existing* row is backfilled to `PUBLISHED` in the same
+migration (`UPDATE ... SET status = 'PUBLISHED'`) so already-live seeded
+content doesn't silently vanish from public pages the moment status
+filtering is added to their read paths — see `docs/architecture.md` for
+the read-path changes this required.
+
+`Tag` gains `archived Boolean @default(false)` — archiving hides a tag
+from every picker without touching its existing content associations
+(spec §24's "archive," as opposed to a hard delete that would strip the
+tag off everything using it).
+
+New model: `AuditLog` (`adminId` → `User`, `action` string, `entityType`
+— a new `AuditEntityType` enum covering every content type an admin can
+touch, including ones `AnalyticsEventType`'s `ContentType` doesn't:
+`FESTIVAL_OCCURRENCE`, `LOCATION`, `MEDIA`, `FESTIVAL_CATEGORY`,
+`DESTINATION_CATEGORY`, `TAG` — `entityId`, `entityLabel` (denormalized,
+so a log entry stays legible after the entity is renamed or deleted),
+`metadata Json?` for before/after values, `createdAt`. Deliberately not an
+extension of `AnalyticsEvent` — see its own schema comment and
+`docs/architecture.md`.
+
+No schema change was needed for Festival/Destination category or Tag
+duplicate-prevention (spec §23/§24): the DB only enforces unique `slug`,
+so case-insensitive name-uniqueness is a service-layer check
+(`src/features/taxonomy/admin-service.ts`), the same "service layer owns
+integrity the DB doesn't model" trade-off already documented on `Media`.
+
 ## Seed data
 
 `prisma/seed.ts` (`npm run db:seed`) creates a small, clearly-marked demo

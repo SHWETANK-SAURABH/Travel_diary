@@ -1,6 +1,7 @@
 export * from "./cn";
 export * from "./Button";
 export * from "./Input";
+export * from "./Textarea";
 export * from "./Badge";
 export * from "./Pill";
 export * from "./Card";

@@ -183,6 +183,7 @@ model User {
   trips             Trip[]
   verifiedFestivals FestivalOccurrence[] @relation("OccurrenceVerifiedBy")
   analyticsEvents   AnalyticsEvent[]
+  auditLogs         AuditLog[]
 
   @@index([email])
 }
@@ -347,6 +348,7 @@ model Tag {
   slug     String      @unique
   name     String
   category TagCategory @default(GENERAL)
+  archived Boolean     @default(false)
 
   festivals             Festival[]       @relation("FestivalTags")
   travellerFitFestivals Festival[]       @relation("FestivalTravellerFit")
@@ -513,11 +515,13 @@ model Destination {
 // ---------------------------------------------------------------------------
 
 model Experience {
-  id          String  @id @default(cuid())
-  slug        String  @unique
+  id          String        @id @default(cuid())
+  slug        String        @unique
   name        String
-  description String  @db.Text
+  description String        @db.Text
   category    String? // free-form for V1; promote to a taxonomy model if it grows
+  status      ContentStatus @default(DRAFT)
+  featured    Boolean       @default(false)
 
   locationId String
   location   Location @relation(fields: [locationId], references: [id])
@@ -544,11 +548,13 @@ model Experience {
 // ---------------------------------------------------------------------------
 
 model Food {
-  id          String  @id @default(cuid())
-  slug        String  @unique
+  id          String        @id @default(cuid())
+  slug        String        @unique
   name        String
-  description String  @db.Text
+  description String        @db.Text
   region      String?
+  status      ContentStatus @default(DRAFT)
+  featured    Boolean       @default(false)
 
   locationId String?
   location   Location? @relation(fields: [locationId], references: [id])
@@ -742,4 +748,46 @@ model AnalyticsEvent {
   @@index([type])
   @@index([createdAt])
   @@index([contentType, contentId])
+}
+
+// ---------------------------------------------------------------------------
+// AuditLog — internal admin operational trail (Phase 10), deliberately
+// separate from AnalyticsEvent: this is "what did an admin change and why,"
+// not product/behavioral analytics, and is never sent to an analytics
+// provider. Covers every content type an admin can touch, including ones
+// AnalyticsEvent's ContentType enum doesn't (Location, Media, the two
+// category tables, Tag) — hence its own, broader entity-type enum.
+// ---------------------------------------------------------------------------
+
+enum AuditEntityType {
+  FESTIVAL
+  FESTIVAL_OCCURRENCE
+  DESTINATION
+  EXPERIENCE
+  FOOD
+  LOCATION
+  MEDIA
+  FESTIVAL_CATEGORY
+  DESTINATION_CATEGORY
+  TAG
+}
+
+model AuditLog {
+  id      String @id @default(cuid())
+  adminId String
+  admin   User   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  action     String // e.g. "created", "published", "archived", "best_time_overridden"
+  entityType AuditEntityType
+  entityId   String
+  /// Denormalized label (e.g. the festival's name at the time) so a log entry
+  /// stays legible even after the entity is later renamed or deleted.
+  entityLabel String?
+  metadata    Json? // e.g. { "before": {...}, "after": {...} } for meaningful-change traceability
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([adminId])
+  @@index([createdAt])
 }

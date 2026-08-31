@@ -63,7 +63,7 @@ export async function GET(request: Request) {
     }
   } else if (kind === "experience") {
     const experience = await db.experience.findFirst({
-      where: { slug: identifier },
+      where: { slug: identifier, status: "PUBLISHED" },
       include: { tags: true, location: true },
     });
     if (experience) {
