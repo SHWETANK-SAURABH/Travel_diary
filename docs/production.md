@@ -33,12 +33,15 @@ the app to function at all in production:
 | `AUTH_URL` | Correct OAuth callback URLs — must match the real production domain exactly |
 
 Everything else (`GOOGLE_CLIENT_*`, `EMAIL_SERVER_*`, `MEDIA_STORAGE_*`,
-`MAP_PROVIDER_KEY`, `ANALYTICS_*`) degrades gracefully when unset — see
-`docs/development.md`'s "Auth in local dev" — **except** `MEDIA_STORAGE_*`
-(`getUploadUrl` in `src/lib/media/storage.ts` throws loudly rather than
-silently accepting broken uploads) and `MAP_PROVIDER_KEY` (the map ships
-with no tiles, not a broken map, if unset — acceptable to launch without
-but not the intended experience).
+`ANALYTICS_*`) degrades gracefully when unset — see `docs/development.md`'s
+"Auth in local dev" — **except** `MEDIA_STORAGE_*` (`getUploadUrl` in
+`src/lib/media/storage.ts` throws loudly rather than silently accepting
+broken uploads). `MAP_PROVIDER_KEY` is declared in `.env.example` and the
+env schema (`src/config/env.ts`) but not actually read anywhere —
+`MapCanvas.tsx` points at a free, keyless vector basemap
+(`tiles.openfreemap.org`) instead, confirmed by grepping for the variable's
+name across `src/`. Leave it blank; it's a placeholder for a future paid
+provider, not a currently-required setting.
 
 **Never commit real values for any of these.** The `.env` checked into
 this repo is local-dev-only (docker-compose credentials, no real secrets)

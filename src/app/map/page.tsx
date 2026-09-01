@@ -13,8 +13,16 @@ export const metadata: Metadata = {
 // instead of reading window.location directly.
 export default function MapPage() {
   return (
-    <Suspense fallback={<Skeleton className="h-[calc(100vh-4rem)] w-full rounded-none" />}>
-      <MapPageClient />
-    </Suspense>
+    <>
+      {/* Visually hidden — the map is intentionally full-bleed with no visible
+          page title (a heading here would compete with the canvas for space
+          on a page that's meant to feel calm and immersive), but the page
+          still needs one real heading for screen readers and heading-order
+          tools. */}
+      <h1 className="sr-only">Living India Map</h1>
+      <Suspense fallback={<Skeleton className="h-[calc(100vh-4rem)] w-full rounded-none" />}>
+        <MapPageClient />
+      </Suspense>
+    </>
   );
 }

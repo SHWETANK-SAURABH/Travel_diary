@@ -125,10 +125,12 @@ export interface MapCanvasProps {
   onDiscoverySelect: (discovery: Pick<MapDiscovery, "id" | "kind" | "slug">) => void;
   onStateSelect: (slug: string) => void;
   onZoom?: (zoom: number) => void;
+  /** Fires once the basemap style, states layer, and discovery layers are all in place — lets the caller swap a loading skeleton for the real canvas instead of showing a blank div while the style/tiles/fonts load. */
+  onMapLoad?: () => void;
 }
 
 export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function MapCanvas(
-  { discoveries, activeLayers, selectedStateSlug, initialView, onViewportChange, onDiscoverySelect, onStateSelect, onZoom },
+  { discoveries, activeLayers, selectedStateSlug, initialView, onViewportChange, onDiscoverySelect, onStateSelect, onZoom, onMapLoad },
   ref
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -147,11 +149,13 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
   const onDiscoverySelectRef = useRef(onDiscoverySelect);
   const onStateSelectRef = useRef(onStateSelect);
   const onZoomRef = useRef(onZoom);
+  const onMapLoadRef = useRef(onMapLoad);
   useEffect(() => {
     onViewportChangeRef.current = onViewportChange;
     onDiscoverySelectRef.current = onDiscoverySelect;
     onStateSelectRef.current = onStateSelect;
     onZoomRef.current = onZoom;
+    onMapLoadRef.current = onMapLoad;
   });
 
   useImperativeHandle(ref, () => ({
@@ -347,6 +351,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, MapCanvasProps>(function Ma
 
       loadedRef.current = true;
       emitViewport();
+      onMapLoadRef.current?.();
     });
 
     return () => {

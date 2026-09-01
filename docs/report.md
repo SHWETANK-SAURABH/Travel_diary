@@ -2565,4 +2565,252 @@ globals.css` (focus-visible fallback); 9 admin form/manager `.tsx` files
 
 ---
 
-<!-- Phase 13+ reports appended below as each phase completes. -->
+## Phase 13 — Final Product QA, Visual Polish & Launch Readiness
+
+**Status: complete.**
+
+### 1. Overall status
+
+**READY FOR DEPLOYMENT**, with the explicit caveats listed in §13 below —
+this phase found no P0 (launch-blocker) or P1 (major-journey-broken)
+issues anywhere in the product. Every P2 issue found was either fixed or
+documented as a deliberate, reasoned deferral. This was an audit-and-QA
+pass, not a features phase — no architecture was rebuilt, no working
+library was replaced, matching this phase's own "do not" list.
+
+### 2. Major issues found
+
+Nothing at P0 or P1 severity. At P2:
+
+- **5 leftover admin-testing artifacts were live in production data** —
+  three festivals ("Test Lantern Festival" ×3, one still `DRAFT`, two
+  `PUBLISHED`) and two destinations ("Test Hill Retreat" ×2, both
+  `PUBLISHED`), created during Phase 10's admin CMS testing (2026-08-31)
+  and never cleaned up. The published ones were appearing in the sitemap,
+  search, and festival/destination listings — genuinely unprofessional
+  content in a product meant to feel "editorial, not database-generated"
+  (spec's own words). Found by noticing `test-lantern-festival-2`/`-3` in
+  a routine `/sitemap.xml` check, not by going looking for it specifically
+  — a reminder that this class of leftover-test-data risk is easy to miss
+  without an explicit sweep.
+- **`/map` had no `<h1>`** — a full-bleed, intentionally chrome-light page
+  with genuinely no visible heading anywhere in the DOM, failing the
+  "semantic headings" / heading-hierarchy check.
+- **`/trips/new` and `/auth/sign-in` showed the generic "TravelDiary" tab
+  title** instead of a page-specific one — the former because it's a
+  Client Component that structurally can't export `metadata`, the latter
+  because its existing `metadata` export only set `robots`, not `title`.
+- **The map's client-side initialization (style/tiles/fonts/custom layers)
+  showed nothing but a blank paper-colored div while it loaded**, with no
+  loading indicator — on a slow connection or slow device this reads as
+  broken rather than loading. (Investigated at length — see §7's note on
+  this phase's own test environment before concluding it was a real,
+  fixable gap and not just sandbox noise.)
+
+### 3. Major issues fixed
+
+- Deleted the 5 leftover test-content rows plus one now-orphaned `Media`
+  row that referenced one of them (verified first, via direct DB query,
+  that zero `SavedContent`/`VisitedContent`/`TripItem` rows referenced any
+  of them — safe to delete outright, not just unpublish; `AuditLog`
+  entries referencing them were deliberately left alone, since that
+  table's own schema comment establishes it's designed to survive the
+  deletion of the entity it logged).
+- Added a visually-hidden (`sr-only`) `<h1>Living India Map</h1>` to
+  `/map` — satisfies the heading requirement without competing with the
+  intentionally chrome-light, full-bleed canvas for visual space.
+- Added `title: "Sign in"` to `/auth/sign-in`'s existing `metadata` export,
+  and a `title: "Plan a trip"` fallback to `src/app/trips/layout.tsx`
+  (only takes effect on `/trips/new` — `/trips` and `/trips/[id]` already
+  set their own more specific titles, which win over a layout default).
+- **`MapCanvas` gained an `onMapLoad` callback**, fired once the basemap
+  style, states layer, and discovery layers are all in place;
+  `MapPageClient` uses it to show a pulsing skeleton overlay until the map
+  is genuinely ready, instead of a blank div the whole time.
+
+### 4. Remaining P2 issues
+
+- **Seed/demo photography is thematically random**, not curated —
+  `picsum.photos/seed/{slug}/...` hashes each content item's own slug to
+  an arbitrary stock photo with no topical awareness (confirmed by reading
+  `prisma/seed.ts`: no keyword/topic mechanism exists to request "desert
+  fort" imagery for Jaisalmer Fort, for instance — Lorem Picsum doesn't
+  support that). Real photography needs to be sourced and curated by hand
+  before this reads as a finished product; not something code can fix, and
+  reasoned through in `docs/release-checklist.md` rather than attempted
+  with more random-seed guessing.
+- **No visible breadcrumb navigation UI** — the `BreadcrumbList` JSON-LD
+  structured data is present and correct (confirmed by inspecting the
+  actual rendered HTML), which is what search engines use, but there's no
+  on-page breadcrumb trail for human visitors. Judged a genuine but minor
+  UX addition, not attempted here — adding new page chrome this late
+  risks drifting into "new feature," which this phase's own rules say to
+  avoid.
+- **Two `<nav aria-label="Primary">` elements exist in the DOM
+  simultaneously** (desktop header nav, mobile bottom nav — mutually
+  exclusive via Tailwind's `md:hidden`/`hidden md:flex`, so only one is
+  ever in the accessibility tree at a given viewport width, since
+  `display: none` also removes an element from the a11y tree). Not a real
+  duplicate-landmark problem for actual users, but worth knowing about if
+  a future audit tool flags it without checking that nuance.
+- Every item already carried forward from Phase 12's own report (no rate
+  limiting, no CSP, two accepted dependency vulnerabilities, `Dropdown`'s
+  partial keyboard trap, unreachable map markers) — re-verified still
+  accurate, not re-litigated here.
+
+### 5. Visual polish performed
+
+A full visual sweep (screenshots at 375px/768px/1920px across homepage,
+festivals list/detail, destinations detail, explore, trips/new, search)
+found the design system holding together consistently: typography,
+spacing, button/card/badge styling, hover states, and the marigold/navy/
+terracotta palette all read as one product across every page checked —
+no multiple-implementations-of-the-same-component drift found (the
+component list spec §4 names — ContentCard, SaveButton, Modal, Tabs,
+EmptyState, Skeleton, etc. — was already consolidated well before this
+phase). The map loading skeleton (§3) is this phase's one new piece of
+visual polish; everything else was verification that Phases 1–12's own
+consistency work had actually held up, not new styling work.
+
+### 6. Accessibility improvements
+
+`/map`'s missing `<h1>` (§3) is this phase's only new accessibility fix —
+Phase 12 already did the heavier accessibility pass (focus trap, form
+labels, touch targets, `:focus-visible` fallback, `role="alert"`). This
+phase's contribution was verification: keyboard navigation, heading
+structure, and focus visibility spot-checked across the pages audited,
+with nothing new found broken.
+
+### 7. Performance improvements
+
+The map loading-state fix (§3) is a perceived-performance improvement,
+not a raw one — investigated first, at length, before treating it as a
+real product gap: the map's actual client-side load time in this phase's
+headless-Chromium test sandbox was highly variable (observed anywhere
+from ~2s to 25+s across otherwise-identical runs), traced via repeated,
+increasingly-instrumented Playwright scripts to the sandbox's lack of
+hardware GPU acceleration (`GL Driver Message... GPU stall due to
+ReadPixels` warnings present in every run, even fast ones) — the style
+JSON and vector tiles themselves fetched over the network in ~2s
+consistently every time; it was specifically MapLibre's internal
+first-frame-rendered event, gated on WebGL rasterization, that varied so
+much. This is a characteristic of the sandboxed test browser, not
+something this codebase controls or should try to re-architect around
+(switching tile providers, etc.) — real users get hardware-accelerated
+WebGL in normal browsers. The fix that *is* in scope, and shipped: making
+whatever wait time exists visible (a loading skeleton) instead of
+indistinguishable from broken.
+
+### 8. SEO verification
+
+Verified against real generated HTML (not assumed): title, meta
+description, canonical link, Open Graph (title/description/url/image/
+type), Twitter Card, and `@graph` JSON-LD structured data (`Festival` type
++ `BreadcrumbList`) all present and correct on a festival detail page —
+inspected the raw HTML directly, not just the React source. `/robots.txt`
+correctly disallows `/admin`, `/api`, `/trips`, `/profile`; `/sitemap.xml`
+lists all public routes plus every published festival/destination detail
+page (24 URLs total, post-cleanup — see §2/§3). The five leftover test
+entries (§2/§3) were literally found via this exact check, which is the
+whole reason this phase's SEO verification step exists rather than being
+assumed clean.
+
+### 9. Security verification
+
+Re-ran Phase 12's authorization checks rather than assuming they still
+held: `/admin` still redirects an unauthenticated request to sign-in
+(confirmed via `tests/e2e/admin-publish.spec.ts`, which re-runs on every
+CI build, not just this phase); draft content still returns `noindex` and
+isn't shown publicly (same test); private data exposure on the trip share
+page re-confirmed absent (no owner PII, no internal notes, no unnecessary
+raw IDs in the rendered share page — spot-checked directly). No security
+regressions introduced by this phase's changes — all of them (content
+deletion, a heading, two titles, a loading-state callback) are either
+data cleanup or presentation-only.
+
+### 10. Critical user journeys tested
+
+All four journeys spec §64/§2 name, walked end-to-end via the existing
+Playwright E2E suite (`tests/e2e/`, all 8 tests passing) plus manual
+verification of the two secondary/third journeys this phase adds
+(Calendar→Month→Festival→Destination→Trip; Hidden India→Discovery→
+Destination→Experience→Trip) via direct navigation and screenshot review
+— both route correctly and render real, non-empty content. The admin
+journey (Admin→Edit→Publish→Public page updated) is both E2E-tested and
+was the exact mechanism used to originally create (and this phase, to
+remove) the leftover test content described in §2/§3 — a small irony
+worth noting: the same admin publish flow this phase re-verified as
+correct is also what proves realistic evidence of why a content-quality
+sweep matters.
+
+### 11. Browser/device testing performed
+
+Chromium only (via Playwright), across three viewport widths (375px
+mobile, 768px tablet, 1920px desktop) on seven key pages — no horizontal
+overflow found at any breakpoint. Safari/Firefox and real mobile device
+testing were **not** performed in this pass (no macOS/iOS/Android runner
+available in this environment) — flagged explicitly in
+`docs/release-checklist.md`'s Product section as a manual step to
+complete against the deployed environment before launch, not silently
+skipped.
+
+### 12. Test/build results
+
+Full pipeline green on the final commit: `npm run typecheck` (clean),
+`npm run lint` (clean), `npm run test` (78/78 unit tests), `npm run build`
+(production build succeeds, correct static/dynamic route split), `npm run
+test:e2e` (8/8 Playwright tests, including a fresh run against the final
+build after this phase's own fixes landed).
+
+### 13. Production deployment readiness
+
+**READY**, from this phase's own scope (product correctness, visual
+consistency, content quality, verified security/accessibility/SEO
+posture) — with the pre-existing, already-documented infrastructure gaps
+from Phase 12 still outstanding and explicitly NOT this phase's job to
+close: no rate limiting, no Content-Security-Policy, real production
+secrets/domain/OAuth callback URLs not yet configured, backups not yet
+provisioned against a real database, and alerting not yet wired to
+`/api/health`/`ErrorLog`. All of these were already correctly scoped to
+Phase 14 ("Production Deployment, Domain, Monitoring & Launch") in
+`docs/production.md`'s own text, written last phase — this phase re-
+confirms that scoping was right rather than re-litigating it. The
+complete, checkable list is `docs/release-checklist.md` (new this phase).
+
+### 14. Files created/modified
+
+**New**: `docs/release-checklist.md`.
+
+**Modified**: `src/app/map/page.tsx` (`sr-only` h1);
+`src/app/auth/sign-in/page.tsx` (title); `src/app/trips/layout.tsx` (title
+fallback); `src/components/map/MapCanvas.tsx` (`onMapLoad` callback);
+`src/app/map/MapPageClient.tsx` (loading skeleton overlay);
+`docs/production.md` (corrected an inaccurate claim about
+`MAP_PROVIDER_KEY` gating map tiles — confirmed by grep that it's
+declared but never read anywhere in `src/`, discovered while
+investigating §3/§7's map loading behavior).
+
+**Database (not a code change, but real production data)**: deleted 5
+leftover test `Festival`/`Destination` rows and 1 orphaned `Media` row
+(§2/§3) — no migration needed, this was row-level cleanup of accidental
+non-seed data, not a schema change.
+
+### 15. Final recommendation
+
+```text
+READY FOR DEPLOYMENT
+```
+
+No P0 or P1 issues exist anywhere in the product. All P2 issues found
+this phase were fixed; the P2 issues that remain (§4) are deliberate,
+reasoned deferrals (curated photography is a content task, not a code
+task; a visible breadcrumb trail is a minor UX addition this phase's own
+scope rules say not to add) or were already correctly identified and
+scoped to Phase 14 in Phase 12's own report. `docs/release-checklist.md`
+is the concrete, checkable gate for the infrastructure/ops work
+(secrets, domain, rate limiting, CSP, backups, alerting) that stands
+between this "product-ready" state and an actual public launch.
+
+---
+
+<!-- Phase 14+ reports appended below as each phase completes. -->

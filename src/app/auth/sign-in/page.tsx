@@ -3,7 +3,7 @@ import { Container } from "@/components/layout";
 import { ErrorState } from "@/components/ui";
 import { SignInForm } from "./SignInForm";
 
-export const metadata: Metadata = { robots: { index: false } };
+export const metadata: Metadata = { title: "Sign in", robots: { index: false } };
 
 interface PageProps {
   searchParams: Promise<{ callbackUrl?: string; error?: string }>;

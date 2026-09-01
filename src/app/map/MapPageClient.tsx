@@ -21,6 +21,7 @@ import type { MapDiscovery, MapSearchResult } from "@/features/map/types";
 import { trackClientEvent } from "@/lib/analytics/client";
 import { TrackedLink } from "@/components/discovery";
 import { calendarHref, monthName } from "@/features/discovery/context";
+import { Skeleton } from "@/components/ui";
 
 const CURRENT_MONTH = new Date().getMonth() + 1;
 
@@ -106,6 +107,11 @@ export function MapPageClient() {
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedDiscovery, setSelectedDiscovery] = useState<SelectedDiscovery | null>(null);
   const [selectedState, setSelectedState] = useState<string | null>(null);
+  // MapLibre's style/tiles/fonts load asynchronously after mount — without
+  // this, the map area is just a blank paper-colored div for however long
+  // that takes (variable: fast on a good connection/GPU, a real gap on a
+  // slow one), which reads as broken rather than loading.
+  const [mapReady, setMapReady] = useState(false);
 
   const mapRef = useRef<MapCanvasHandle>(null);
   const hasTrackedOpen = useRef(false);
@@ -223,6 +229,11 @@ export function MapPageClient() {
       onPanelClose={() => setPanelOpen(false)}
       panelContent={panelContent}
     >
+      {!mapReady && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-paper" aria-hidden="true">
+          <Skeleton className="h-full w-full rounded-none" />
+        </div>
+      )}
       <MapCanvas
         ref={mapRef}
         discoveries={discoveries}
@@ -232,6 +243,7 @@ export function MapPageClient() {
         onViewportChange={handleViewportChange}
         onDiscoverySelect={handleDiscoverySelect}
         onStateSelect={handleStateSelect}
+        onMapLoad={() => setMapReady(true)}
       />
     </MapShell>
   );
