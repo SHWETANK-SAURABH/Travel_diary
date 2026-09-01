@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { mergeGuestData } from "@/features/users/service";
+import { mergeAnonymousAnalyticsIdentity } from "@/lib/analytics/merge-identity";
 import { guestStateSchema } from "@/lib/validation";
 
 /**
@@ -21,5 +22,6 @@ export async function POST(request: Request) {
   }
 
   await mergeGuestData(session.user.id, body.data);
+  await mergeAnonymousAnalyticsIdentity(session.user.id, body.data.analyticsAnonymousId);
   return NextResponse.json({ ok: true });
 }

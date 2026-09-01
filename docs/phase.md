@@ -10867,3 +10867,5065 @@ Do NOT automatically proceed to the next phase.
 The next phase will focus on **Analytics, Content Intelligence and Product Observability**, using the events and operational data collected across the platform.
 
 
+
+
+# PHASE 11 — ANALYTICS, CONTENT INTELLIGENCE & PRODUCT OBSERVABILITY
+
+You are continuing development of the India travel discovery platform.
+
+Before making changes:
+
+1. Inspect the existing repository.
+2. Read `/docs/product-spec.md`.
+3. Read `/docs/architecture.md`.
+4. Read `/docs/database.md`.
+5. Inspect the completed Phases 2–10.
+6. Inspect the existing analytics abstraction and all analytics events.
+7. Inspect the admin CMS and audit-log implementation.
+8. Do NOT rewrite working functionality.
+9. Reuse existing analytics, database, authentication, CMS and UI infrastructure.
+10. If an existing implementation differs from this specification, preserve the working architecture and extend it cleanly.
+
+---
+
+# 1. GOAL
+
+Build a practical:
+
+# ANALYTICS + CONTENT INTELLIGENCE + PRODUCT OBSERVABILITY SYSTEM
+
+The system should help answer:
+
+### Product
+
+* What are users discovering?
+* What do users search for?
+* What do users save?
+* What do users add to trips?
+* Which discovery paths are working?
+
+### Content
+
+* Which festivals are popular?
+* Which destinations are popular?
+* Which content is missing?
+* What are users searching for that doesn't exist?
+
+### Operations
+
+* Is the application healthy?
+* Are errors increasing?
+* Are important APIs slow?
+* Are map/search/database operations failing?
+
+Do NOT build a massive enterprise analytics platform.
+
+Prioritize actionable insights.
+
+---
+
+# 2. THREE LAYERS
+
+Separate analytics into:
+
+```text
+Product Analytics
+       ↓
+Content Intelligence
+       ↓
+Technical Observability
+```
+
+Do not mix these concepts together.
+
+---
+
+# 3. PRODUCT ANALYTICS
+
+Use the existing analytics abstraction.
+
+Track meaningful user behavior.
+
+Core events:
+
+### Discovery
+
+* page viewed
+* explore opened
+* festival viewed
+* destination viewed
+* experience viewed
+* food viewed
+
+### Map
+
+* map opened
+* state selected
+* city selected
+* cluster selected
+* marker selected
+* month changed
+* layer toggled
+* map search
+* map preview opened
+* view on map
+
+### Search
+
+* search opened
+* search submitted
+* result clicked
+* zero-result search
+* search refined
+
+### Calendar
+
+* calendar opened
+* month selected
+* festival clicked
+* map CTA clicked
+
+### Personalization
+
+* onboarding started
+* onboarding completed
+* onboarding skipped
+* preference changed
+* recommendation viewed
+* recommendation clicked
+* recommendation saved
+* recommendation added to trip
+
+### Account
+
+* signup
+* login
+* logout
+* guest-to-account merge
+
+### Saves
+
+* save
+* unsave
+* visited
+* unvisited
+
+### Trips
+
+* trip created
+* trip opened
+* item added
+* item removed
+* item reordered
+* trip duplicated
+* trip deleted
+* trip shared
+
+Do not track every UI interaction.
+
+---
+
+# 4. EVENT SCHEMA
+
+Create a consistent event structure.
+
+Conceptually:
+
+```ts
+type AnalyticsEvent = {
+  name: string
+  timestamp: Date
+  anonymousId?: string
+  userId?: string
+  sessionId?: string
+  properties?: Record<string, unknown>
+}
+```
+
+Adapt to the existing implementation.
+
+Every event should have:
+
+* event name
+* timestamp
+* anonymous/session identity where appropriate
+* optional authenticated user identity
+* structured properties
+
+---
+
+# 5. EVENT NAMING
+
+Use a consistent naming convention.
+
+For example:
+
+```text
+map_opened
+map_state_selected
+map_marker_selected
+search_submitted
+search_zero_results
+festival_viewed
+destination_viewed
+recommendation_clicked
+trip_created
+```
+
+Do not mix naming styles.
+
+Document the convention.
+
+---
+
+# 6. ANONYMOUS IDENTIFIERS
+
+Support anonymous analytics.
+
+A user should not need an account for basic product analytics.
+
+Use a privacy-conscious anonymous identifier.
+
+When a guest becomes authenticated:
+
+Do NOT create unnecessary duplicate identities if the analytics provider supports identity association.
+
+Follow the provider's privacy-safe identity model.
+
+---
+
+# 7. PERSONAL DATA
+
+Do NOT send unnecessary personal information to analytics.
+
+Never send:
+
+* passwords
+* authentication tokens
+* private trip notes
+* private preferences in raw form
+* sensitive account information
+
+Only send information needed for product analysis.
+
+---
+
+# 8. SEARCH ANALYTICS
+
+Search is a major content-intelligence source.
+
+For each meaningful search:
+
+Capture:
+
+* normalized query
+* result count
+* selected result type
+* zero-result state
+* broad context where appropriate
+
+Avoid storing raw sensitive queries if they could contain personal information.
+
+---
+
+# 9. ZERO-RESULT SEARCHES
+
+Create a dedicated content-intelligence pipeline.
+
+Example:
+
+```text
+User searches:
+"Ziro music festival"
+
+No result
+
+        ↓
+
+Record zero-result query
+
+        ↓
+
+Admin Content Opportunities
+```
+
+This helps identify:
+
+> What travellers are looking for that the platform doesn't currently cover.
+
+---
+
+# 10. QUERY NORMALIZATION
+
+Normalize search queries for analysis.
+
+Handle:
+
+* casing
+* whitespace
+* obvious punctuation
+* duplicate spaces
+
+Do not aggressively rewrite user queries.
+
+Preserve the original query where appropriate and privacy-safe.
+
+---
+
+# 11. CONTENT OPPORTUNITY DETECTION
+
+Create a system that identifies repeated missing searches.
+
+Example:
+
+```text
+Query              Searches
+--------------------------------
+Ziro Music Festival     48
+Majuli                  37
+Spiti winter            29
+```
+
+Use thresholds to avoid showing one-off noise.
+
+---
+
+# 12. ADMIN CONTENT OPPORTUNITIES
+
+Add a section to:
+
+```text
+/admin
+```
+
+or:
+
+```text
+/admin/analytics
+```
+
+Show:
+
+### Search opportunities
+
+Queries with:
+
+* high search volume
+* zero results
+
+### Content gaps
+
+Potential missing:
+
+* festivals
+* destinations
+* experiences
+* food
+
+Do NOT automatically create content.
+
+The admin decides whether the opportunity is valid.
+
+---
+
+# 13. SEARCH TRENDING
+
+Provide useful trending searches.
+
+Possible ranking:
+
+* query frequency
+* recent growth
+* zero-result frequency
+
+Do not expose private individual search behavior.
+
+Show aggregate trends only.
+
+---
+
+# 14. CONTENT PERFORMANCE
+
+Create content analytics.
+
+For festivals:
+
+Track:
+
+* views
+* saves
+* map clicks
+* add-to-trip
+* shares
+
+For destinations:
+
+Track:
+
+* views
+* saves
+* visited
+* map clicks
+* add-to-trip
+* recommendation clicks
+
+For experiences/food:
+
+Track:
+
+* views
+* saves
+* clicks from destination/festival pages
+
+---
+
+# 15. CONTENT PERFORMANCE DASHBOARD
+
+Admin should eventually be able to see:
+
+### Top Festivals
+
+### Top Destinations
+
+### Most Saved
+
+### Most Added to Trips
+
+### Most Viewed
+
+### Fastest Growing
+
+Keep the dashboard focused.
+
+---
+
+# 16. ENGAGEMENT FUNNEL
+
+Build a lightweight discovery funnel.
+
+Example:
+
+```text
+Discovery
+   ↓
+Content View
+   ↓
+Save / Explore
+   ↓
+Add to Trip
+   ↓
+Trip Created
+   ↓
+Trip Shared
+```
+
+Do not claim this is a perfect conversion funnel.
+
+It is directional product analytics.
+
+---
+
+# 17. MAP ANALYTICS
+
+Use map events to understand exploration.
+
+Track aggregate:
+
+* most explored states
+* most selected months
+* most clicked map discoveries
+* map search terms
+* cluster interactions
+
+Do NOT record unnecessary precise movement paths.
+
+---
+
+# 18. MAP HEAT / EXPLORATION
+
+If useful, create an aggregate geographic exploration view.
+
+For example:
+
+> States receiving the most discovery interactions.
+
+Do NOT build a surveillance-style exact user movement map.
+
+Use aggregated geographic signals.
+
+---
+
+# 19. SEASONAL ANALYTICS
+
+Track:
+
+* most selected months
+* most viewed festivals per month
+* most viewed destinations per month
+* most saved destinations per month
+* recommendation performance by month
+
+This helps improve seasonal ranking.
+
+---
+
+# 20. RECOMMENDATION ANALYTICS
+
+Track:
+
+* recommendation impressions
+* clicks
+* saves
+* add-to-trip
+* context
+* anonymous vs personalized where appropriate
+
+Do not store private recommendation explanations unnecessarily.
+
+---
+
+# 21. RECOMMENDATION QUALITY SIGNAL
+
+Create a basic measurement framework.
+
+Possible signal:
+
+```text
+Recommendation shown
+        ↓
+Clicked?
+        ↓
+Saved?
+        ↓
+Added to trip?
+```
+
+Do NOT claim that this proves recommendation quality.
+
+Use it as an initial engagement signal.
+
+---
+
+# 22. PERSONALIZATION PERFORMANCE
+
+Compare:
+
+### Generic recommendations
+
+vs
+
+### Personalized recommendations
+
+where enough aggregate data exists.
+
+Potential metrics:
+
+* click-through
+* save rate
+* add-to-trip rate
+
+Do not expose individual user comparisons.
+
+---
+
+# 23. TRIP ANALYTICS
+
+Track aggregate:
+
+* trips created
+* average itinerary size
+* most added destinations
+* most added festivals
+* most common trip duration ranges
+* public trip shares
+
+Do not expose private trip details.
+
+---
+
+# 24. ACCOUNT ANALYTICS
+
+Track aggregate:
+
+* signup conversion
+* guest-to-account conversion
+* onboarding completion
+* onboarding skip rate
+* preference completion
+
+Do not create invasive user profiles.
+
+---
+
+# 25. ADMIN DASHBOARD
+
+Create:
+
+```text
+/admin/analytics
+```
+
+Recommended sections:
+
+### Overview
+
+* users/visitors where provider supports it
+* content views
+* searches
+* saves
+* trips
+
+### Discovery
+
+* popular content
+* map activity
+* calendar activity
+
+### Search
+
+* top searches
+* zero-result searches
+* content opportunities
+
+### Recommendations
+
+* impressions
+* clicks
+* saves
+* add-to-trip
+
+### Trips
+
+* trip creation
+* popular itinerary content
+* sharing
+
+Keep it understandable at a glance.
+
+---
+
+# 26. DATE RANGES
+
+Admin analytics should support:
+
+* Today
+* 7 days
+* 30 days
+* 90 days
+
+Avoid an overly complex date-range builder in V1.
+
+---
+
+# 27. COMPARISON
+
+Where useful, allow:
+
+> Previous period
+
+For example:
+
+```text
+Last 30 days
+vs
+Previous 30 days
+```
+
+Show percentage change where mathematically meaningful.
+
+Do not show misleading percentages for tiny sample sizes.
+
+---
+
+# 28. SAMPLE SIZE
+
+Avoid overinterpreting small numbers.
+
+For example:
+
+> +400%
+
+from 1 click → 5 clicks
+
+is not necessarily meaningful.
+
+Where appropriate, show raw counts alongside percentages.
+
+---
+
+# 29. CONTENT OPPORTUNITY SCORING
+
+Create a simple opportunity score based on:
+
+* search volume
+* zero-result rate
+* growth
+* content absence
+
+Do not use an opaque AI score.
+
+Document the formula.
+
+---
+
+# 30. ADMIN CONTENT GAP WORKFLOW
+
+From a search opportunity:
+
+Admin should be able to:
+
+> Investigate
+
+Then potentially:
+
+> Create Festival
+
+or:
+
+> Create Destination
+
+using the existing CMS.
+
+Do not automatically publish generated content.
+
+---
+
+# 31. TECHNICAL OBSERVABILITY
+
+Create a separate observability layer.
+
+Monitor:
+
+* server errors
+* API failures
+* slow requests
+* database errors
+* map failures
+* search failures
+* authentication failures
+
+Use the existing infrastructure/provider where available.
+
+Do not build a custom log aggregation system unnecessarily.
+
+---
+
+# 32. ERROR TRACKING
+
+Integrate an error-tracking abstraction/provider where appropriate.
+
+Capture:
+
+* exceptions
+* route failures
+* server errors
+* important client errors
+
+Do NOT capture:
+
+* passwords
+* tokens
+* private trip data
+* unnecessary user content
+
+---
+
+# 33. PERFORMANCE MONITORING
+
+Track important performance signals.
+
+Examples:
+
+* page load
+* server response time
+* search latency
+* map data request latency
+* recommendation latency
+* database query latency
+
+Use provider/platform capabilities where possible.
+
+---
+
+# 34. MAP PERFORMANCE
+
+Specifically monitor:
+
+* map initialization time
+* map data request duration
+* number of map requests
+* failed map requests
+
+Do not collect detailed user movement trajectories.
+
+---
+
+# 35. SEARCH PERFORMANCE
+
+Monitor:
+
+* search latency
+* result count
+* zero-result rate
+* search errors
+
+This should help identify both technical and content problems.
+
+---
+
+# 36. DATABASE OBSERVABILITY
+
+Identify expensive queries.
+
+Focus on:
+
+* map viewport queries
+* search queries
+* recommendation queries
+* nearby queries
+* trip queries
+
+Do not expose database internals publicly.
+
+---
+
+# 37. HEALTH CHECK
+
+Create a lightweight health-check endpoint.
+
+It should verify essential infrastructure where appropriate:
+
+* application
+* database
+
+Do not expose sensitive system information.
+
+---
+
+# 38. ADMIN HEALTH VIEW
+
+If practical, provide:
+
+```text
+System Health
+
+Application     Healthy
+Database        Healthy
+Search          Healthy
+Map API         Healthy
+```
+
+Do not expose secrets or internal infrastructure details.
+
+---
+
+# 39. ALERTING FOUNDATION
+
+Do not build a complicated alerting platform.
+
+However, create clear thresholds for important failures such as:
+
+* application error spikes
+* database failures
+* map service failures
+* search failures
+
+Use the selected monitoring provider's alerting capabilities where possible.
+
+---
+
+# 40. ANALYTICS STORAGE
+
+If using an external analytics provider:
+
+Do not unnecessarily duplicate all raw events into PostgreSQL.
+
+If internal aggregation is required:
+
+Store only the data needed for:
+
+* content opportunities
+* operational dashboards
+* product metrics
+
+Avoid building a giant event warehouse in V1.
+
+---
+
+# 41. DATA RETENTION
+
+Document a reasonable retention strategy.
+
+Do not retain analytics forever by default.
+
+Separate:
+
+* operational logs
+* aggregate analytics
+* audit logs
+
+Each may have different retention needs.
+
+---
+
+# 42. PRIVACY
+
+Respect privacy throughout analytics.
+
+Do not:
+
+* expose private trip data
+* expose user preferences publicly
+* expose individual search histories
+* expose private account behavior
+* build unnecessary tracking
+
+Admin analytics should be aggregate wherever possible.
+
+---
+
+# 43. ADMIN PERMISSIONS
+
+Only admins can access analytics dashboards containing internal metrics.
+
+Public users should not see:
+
+* content opportunity data
+* internal search trends
+* system health
+* operational metrics
+
+---
+
+# 44. DESIGN
+
+Use the existing design system.
+
+The admin analytics interface should prioritize:
+
+* clarity
+* readable charts
+* useful tables
+* concise metrics
+
+Do not create a wall of charts.
+
+Every visualization should answer a meaningful question.
+
+---
+
+# 45. CHARTS
+
+Where charts are useful, include only meaningful ones.
+
+Examples:
+
+### Searches over time
+
+### Content views over time
+
+### Saves over time
+
+### Trip creation over time
+
+### Zero-result searches
+
+Do not create charts simply because analytics dashboards traditionally have charts.
+
+---
+
+# 46. TABLES
+
+Use tables for:
+
+* Top searches
+* Zero-result searches
+* Top content
+* Content opportunities
+
+Include:
+
+* count
+* change
+* relevant action
+
+---
+
+# 47. CONTENT OPPORTUNITY ACTIONS
+
+For each opportunity, allow:
+
+* View query
+* Search existing content
+* Create content
+* Dismiss opportunity
+
+"Dismissing" should not delete analytics data.
+
+It only hides the opportunity from the current workflow.
+
+---
+
+# 48. ANALYTICS QUALITY
+
+Avoid duplicate events.
+
+Ensure:
+
+* events have stable names
+* properties are consistent
+* repeated renders do not fire duplicate page-view events
+* client/server events are not accidentally counted twice
+
+---
+
+# 49. EVENT DOCUMENTATION
+
+Create:
+
+```text
+/docs/analytics.md
+```
+
+Document:
+
+* event names
+* event properties
+* purpose
+* privacy considerations
+* where events are emitted
+
+This becomes the analytics source of truth.
+
+---
+
+# 50. TESTING
+
+Test:
+
+### Product analytics
+
+* events fire
+* no duplicates
+* anonymous tracking
+* authenticated tracking
+
+### Search
+
+* successful search
+* zero-result search
+* query normalization
+* opportunity aggregation
+
+### Content analytics
+
+* festival views
+* destination views
+* saves
+* trip actions
+
+### Recommendations
+
+* impressions
+* clicks
+* saves
+* add-to-trip
+
+### Admin
+
+* dashboard
+* date ranges
+* tables
+* charts
+* content opportunities
+
+### Privacy
+
+* no sensitive data in analytics
+* private trips not exposed
+* user-specific analytics protected
+
+### Observability
+
+* errors captured
+* health check works
+* performance metrics available
+
+Run:
+
+* TypeScript
+* lint
+* tests
+* production build
+
+Fix all regressions.
+
+---
+
+# 51. ACCEPTANCE CRITERIA
+
+Phase 11 is complete when:
+
+* Analytics event architecture is consistent.
+* Core product events are tracked.
+* Anonymous analytics work.
+* Authenticated analytics work.
+* Duplicate event firing is prevented.
+* Search analytics work.
+* Zero-result searches are recorded.
+* Content opportunities are generated.
+* Admin content opportunities are visible.
+* Content performance metrics work.
+* Map analytics work.
+* Seasonal analytics work.
+* Recommendation analytics work.
+* Trip analytics work.
+* Account conversion analytics work.
+* `/admin/analytics` works.
+* Date-range filtering works.
+* Aggregate comparisons work where meaningful.
+* Technical error tracking exists.
+* Performance monitoring exists.
+* Health check exists.
+* Important failures can be monitored/alerted.
+* Privacy boundaries are respected.
+* `/docs/analytics.md` exists.
+* No earlier phase is broken.
+* TypeScript passes.
+* Lint passes.
+* Production build passes.
+
+---
+
+# 52. FINAL REPORT
+
+When finished, report:
+
+1. Analytics architecture.
+2. Event naming convention.
+3. Major tracked events.
+4. Search/content opportunity system.
+5. Admin analytics dashboard.
+6. Recommendation analytics.
+7. Trip/account analytics.
+8. Error tracking.
+9. Performance monitoring.
+10. Health-check implementation.
+11. Privacy approach.
+12. Data retention approach.
+13. Documentation created.
+14. Files created/modified.
+15. Tests/checks performed.
+16. Remaining limitations.
+
+Do NOT automatically proceed to the next phase.
+
+The next phase will be **SEO, Performance, Security, Accessibility & Production Hardening**, where the complete product will be optimized and prepared for real-world deployment.
+
+
+
+
+
+
+
+# PHASE 12 — SEO, PERFORMANCE, SECURITY, ACCESSIBILITY & PRODUCTION HARDENING
+
+You are continuing development of the India travel discovery platform.
+
+This is the final major engineering hardening phase.
+
+Before making changes:
+
+1. Inspect the entire repository.
+2. Read `/docs/product-spec.md`.
+3. Read `/docs/architecture.md`.
+4. Read `/docs/database.md`.
+5. Read `/docs/analytics.md`.
+6. Inspect all completed phases.
+7. Understand the existing architecture before changing anything.
+8. Do NOT rewrite working systems unnecessarily.
+9. Do NOT introduce major new product features.
+10. Prioritize correctness, performance, security, accessibility, SEO and deployment readiness.
+
+---
+
+# 1. GOAL
+
+Prepare the complete platform for production deployment.
+
+The platform currently contains:
+
+* Living India Map
+* Festival discovery
+* Destination discovery
+* Hidden India
+* Search
+* Calendar
+* Seasonal discovery
+* Personalization
+* Recommendations
+* Accounts
+* Saves
+* Visited
+* Trip planner
+* Public trip sharing
+* Admin CMS
+* Analytics
+* Content intelligence
+* Observability
+
+Now harden all of these systems.
+
+---
+
+# 2. IMPORTANT RULE
+
+Do NOT add major new features.
+
+This phase is for:
+
+```text
+Security
+Performance
+SEO
+Accessibility
+Reliability
+Testing
+Monitoring
+Deployment
+```
+
+If you discover an architectural problem, fix it carefully without breaking existing functionality.
+
+---
+
+# 3. FULL SYSTEM AUDIT
+
+Start by auditing:
+
+### Frontend
+
+* components
+* routes
+* state
+* loading
+* error handling
+* accessibility
+* bundle size
+
+### Backend
+
+* APIs
+* server actions
+* database access
+* authorization
+* validation
+* caching
+
+### Database
+
+* schema
+* indexes
+* constraints
+* migrations
+* query performance
+
+### Map
+
+* loading
+* geographic queries
+* clustering
+* mobile performance
+
+### Search
+
+* indexing
+* latency
+* zero results
+
+### Recommendations
+
+* scoring
+* performance
+* caching
+
+### Trips
+
+* authorization
+* mutations
+* reorder performance
+
+### CMS
+
+* admin authorization
+* publishing
+* preview
+* cache invalidation
+
+### Analytics
+
+* event duplication
+* privacy
+* performance
+
+Produce an internal audit summary before making large changes.
+
+---
+
+# 4. SECURITY AUDIT
+
+Perform a full application security review.
+
+Check for:
+
+* authentication bypass
+* authorization bypass
+* IDOR
+* insecure direct object access
+* privilege escalation
+* missing server-side validation
+* unsafe redirects
+* injection risks
+* XSS
+* CSRF where relevant
+* insecure cookies
+* exposed secrets
+* sensitive data leakage
+* unsafe file uploads
+* insecure API endpoints
+
+Fix confirmed issues.
+
+Do not make speculative security changes that break valid functionality.
+
+---
+
+# 5. AUTHORIZATION
+
+Verify every private resource:
+
+### User
+
+Only owner can access.
+
+### Saves
+
+Only owner.
+
+### Visited
+
+Only owner.
+
+### Preferences
+
+Only owner.
+
+### Trips
+
+Only owner unless public sharing is explicitly enabled.
+
+### Admin
+
+Only authorized admins.
+
+Do NOT rely on frontend checks.
+
+---
+
+# 6. ADMIN SECURITY
+
+Verify:
+
+```text id="7gfl4o"
+Anonymous
+   ↓
+Blocked
+
+Normal user
+   ↓
+Blocked
+
+Admin
+   ↓
+Allowed
+```
+
+Every mutation must verify authorization server-side.
+
+---
+
+# 7. INPUT VALIDATION
+
+Audit every user-controlled input:
+
+* search
+* preferences
+* authentication
+* trip creation
+* trip item updates
+* reorder
+* sharing
+* admin forms
+* media
+* taxonomy
+
+Use schema validation.
+
+Reject malformed input server-side.
+
+---
+
+# 8. DATABASE SECURITY
+
+Check:
+
+* foreign keys
+* unique constraints
+* indexes
+* cascade behavior
+* nullable fields
+* orphan records
+
+Prevent accidental deletion of related content.
+
+Do not expose raw database errors to users.
+
+---
+
+# 9. SECRETS
+
+Search the repository for accidentally committed:
+
+* API keys
+* tokens
+* passwords
+* secrets
+* private URLs
+
+Verify:
+
+* `.env`
+* `.env.local`
+* credentials
+* provider keys
+
+are ignored by Git.
+
+Ensure `.env.example` contains placeholders only.
+
+---
+
+# 10. DEPENDENCY AUDIT
+
+Inspect dependencies.
+
+Run appropriate package-manager security checks.
+
+Identify:
+
+* vulnerable dependencies
+* outdated critical packages
+* unnecessary packages
+
+Do not blindly upgrade everything.
+
+Only make safe upgrades compatible with the current application.
+
+---
+
+# 11. SECURITY HEADERS
+
+Configure appropriate security headers.
+
+Where compatible, consider:
+
+* Content Security Policy
+* X-Content-Type-Options
+* Referrer-Policy
+* Permissions-Policy
+* frame protections
+* secure cookies
+
+Do not implement an overly restrictive CSP that breaks the map/authentication/media providers.
+
+Test the resulting application.
+
+---
+
+# 12. RATE LIMITING
+
+Protect sensitive/high-cost endpoints where appropriate:
+
+* authentication
+* search
+* recommendation generation
+* map data
+* admin mutations
+* content creation
+* media operations
+
+Use provider/platform infrastructure where possible.
+
+Do not create a complicated custom rate-limiting service unless necessary.
+
+---
+
+# 13. FILE UPLOAD SECURITY
+
+For CMS media:
+
+Validate:
+
+* MIME type
+* file size
+* dimensions
+* actual file content where practical
+
+Prevent:
+
+* executable uploads
+* dangerous file types
+* path traversal
+* unsafe filenames
+
+Do not store uploaded files directly in application source directories.
+
+---
+
+# 14. XSS
+
+Audit all user-controlled/rendered content.
+
+Particularly:
+
+* CMS descriptions
+* trip content
+* public shared trips
+* search queries
+* metadata
+
+Do not render arbitrary HTML unless explicitly sanitized.
+
+If rich text is supported, sanitize it server-side.
+
+---
+
+# 15. SEO AUDIT
+
+SEO is critical for:
+
+* festivals
+* destinations
+* discovery content
+
+Audit all public routes.
+
+---
+
+# 16. CANONICAL URLS
+
+Verify:
+
+### Festivals
+
+```text id="b0j2dy"
+/festivals/[slug]
+```
+
+### Destinations
+
+```text id="9u3xg4"
+/destinations/[slug]
+```
+
+Use permanent canonical URLs.
+
+Prevent duplicate canonical pages.
+
+---
+
+# 17. METADATA
+
+Ensure dynamic metadata exists for:
+
+### Festival pages
+
+* title
+* description
+* canonical
+* Open Graph
+* social image
+
+### Destination pages
+
+* title
+* description
+* canonical
+* Open Graph
+* social image
+
+### Public trips
+
+Appropriate metadata.
+
+Do not expose private trip metadata.
+
+---
+
+# 18. STRUCTURED DATA
+
+Validate structured data for:
+
+* Festival/Event
+* Destination/Place
+* Breadcrumbs
+* Public trips where appropriate
+
+Only include fields supported by real content.
+
+Do not fabricate:
+
+* dates
+* ratings
+* reviews
+* prices
+* locations
+
+---
+
+# 19. SITEMAP
+
+Implement/update sitemap generation.
+
+Include indexable:
+
+* festival pages
+* destination pages
+* Hidden India
+* major public discovery pages
+
+Do NOT include:
+
+* admin
+* profile
+* saved
+* private trips
+* authentication routes
+
+---
+
+# 20. ROBOTS
+
+Ensure:
+
+* admin blocked
+* private user areas blocked
+* authentication routes handled correctly
+
+Do not accidentally block public festival/destination pages.
+
+---
+
+# 21. ERROR PAGES
+
+Implement polished:
+
+* 404
+* 500
+* route-level errors
+
+For example:
+
+> We couldn't find that discovery.
+
+Provide useful navigation back to:
+
+* Explore
+* Map
+* Festivals
+* Destinations
+
+---
+
+# 22. PERFORMANCE AUDIT
+
+Measure:
+
+* initial page load
+* JS bundle
+* image weight
+* API latency
+* database queries
+* map loading
+* search latency
+* recommendation latency
+
+Identify the largest bottlenecks.
+
+Do not optimize blindly.
+
+---
+
+# 23. FRONTEND BUNDLE
+
+Audit for:
+
+* unnecessary dependencies
+* duplicate libraries
+* oversized client components
+* unnecessary global state
+* server code accidentally included in client bundles
+
+Prefer server rendering where appropriate.
+
+Use client components only when interactivity requires them.
+
+---
+
+# 24. IMAGE OPTIMIZATION
+
+Audit every major image surface:
+
+* homepage
+* festival pages
+* destination pages
+* cards
+* map previews
+* trips
+
+Use:
+
+* responsive sizes
+* modern formats where supported
+* lazy loading
+* priority for critical hero images
+
+Do not load large gallery images before they're needed.
+
+---
+
+# 25. MAP PERFORMANCE
+
+The map is one of the most important performance surfaces.
+
+Verify:
+
+* viewport-based data loading
+* clustering
+* debounced requests
+* caching
+* lightweight map payloads
+* limited initial data
+* mobile optimization
+
+Do NOT load all India content into the browser.
+
+---
+
+# 26. MAP REQUEST DEDUPLICATION
+
+Ensure rapid map movement does not produce unnecessary requests.
+
+Use:
+
+* debounce
+* cancellation/abort
+* request deduplication
+* caching
+
+where appropriate.
+
+---
+
+# 27. SEARCH PERFORMANCE
+
+Verify:
+
+* database indexes
+* debounced requests
+* result limits
+* pagination
+* server-side search
+
+Do not return huge result sets.
+
+---
+
+# 28. RECOMMENDATION PERFORMANCE
+
+Verify:
+
+* generic seasonal recommendations are cached
+* personalized recommendations are efficient
+* recommendation queries are indexed
+* Top 5 result limit is enforced
+
+Do not run full-database scoring unnecessarily.
+
+---
+
+# 29. DATABASE PERFORMANCE
+
+Inspect slow queries.
+
+Pay special attention to:
+
+* map viewport queries
+* nearby queries
+* search
+* recommendation queries
+* saves
+* trip queries
+* CMS lists
+
+Add indexes where evidence supports them.
+
+Do not add indexes blindly.
+
+---
+
+# 30. N+1 QUERY AUDIT
+
+Look for N+1 patterns.
+
+Especially:
+
+* festival cards + save state
+* destination cards + save state
+* nearby content
+* trip items
+* admin relationship lists
+
+Replace inefficient loops with:
+
+* joins
+* batching
+* eager loading
+* appropriate query strategies
+
+---
+
+# 31. CACHING
+
+Review caching strategy for:
+
+### Public content
+
+Festival/destination pages.
+
+### Seasonal content
+
+Best destinations this month.
+
+### Search
+
+Where appropriate.
+
+### Map
+
+Viewport data where useful.
+
+### Recommendations
+
+Generic vs personalized.
+
+### CMS
+
+Targeted invalidation.
+
+Do NOT cache private user data in public caches.
+
+---
+
+# 32. CACHE INVALIDATION
+
+Verify that CMS updates invalidate:
+
+* festival pages
+* destination pages
+* map data
+* search indexes/cache
+* calendar
+* nearby relationships
+* Explore sections
+
+Use targeted invalidation.
+
+---
+
+# 33. ACCESSIBILITY AUDIT
+
+Audit the complete product.
+
+Check:
+
+* semantic HTML
+* keyboard navigation
+* focus management
+* focus visibility
+* labels
+* forms
+* buttons
+* modals
+* bottom sheets
+* navigation
+* map controls
+* color contrast
+* screen-reader labels
+
+---
+
+# 34. MAP ACCESSIBILITY
+
+The map must not be the only way to access content.
+
+Provide meaningful alternatives through:
+
+* discovery lists
+* search
+* state panels
+* content pages
+
+Map controls must have accessible labels.
+
+---
+
+# 35. KEYBOARD NAVIGATION
+
+Verify:
+
+* navigation
+* search
+* filters
+* cards
+* modals
+* panels
+* bottom sheets
+* profile
+* trip planner
+* admin
+
+No keyboard traps.
+
+---
+
+# 36. REDUCED MOTION
+
+Respect:
+
+```text id="v8k4jy"
+prefers-reduced-motion
+```
+
+Reduce:
+
+* map transitions
+* page transitions
+* panel animations
+* decorative motion
+
+Do not disable useful interaction feedback.
+
+---
+
+# 37. FORM ACCESSIBILITY
+
+Audit:
+
+* authentication
+* preferences
+* trips
+* CMS
+* search
+
+Every input needs a proper accessible label.
+
+Errors should be associated with the relevant field.
+
+---
+
+# 38. MOBILE AUDIT
+
+Test the complete product on mobile.
+
+Especially:
+
+* homepage
+* map
+* festivals
+* destinations
+* search
+* calendar
+* recommendations
+* profile
+* trips
+* admin
+
+Check:
+
+* touch targets
+* horizontal overflow
+* viewport height
+* bottom sheets
+* sticky controls
+* keyboard behavior
+
+---
+
+# 39. OFFLINE/NETWORK FAILURE
+
+V1 does NOT require full offline mode.
+
+However, graceful network failure is required.
+
+Handle:
+
+* API unavailable
+* map unavailable
+* slow network
+* save failure
+* trip mutation failure
+
+Use retry/recovery UI.
+
+Do not lose user input unnecessarily.
+
+---
+
+# 40. LOADING EXPERIENCE
+
+Audit all major routes.
+
+Avoid:
+
+* blank screens
+* generic full-page spinners
+* layout jumps
+
+Use:
+
+* skeletons
+* progressive loading
+* stable layout dimensions
+
+---
+
+# 41. ERROR BOUNDARIES
+
+Ensure a failure in one component does not crash the entire application.
+
+Examples:
+
+* Map failure should not break navigation.
+* Nearby content failure should not break festival page.
+* Recommendation failure should not break destination page.
+* Analytics failure should not break user actions.
+
+Analytics must be fail-safe.
+
+---
+
+# 42. ANALYTICS FAIL-SAFE
+
+If analytics provider fails:
+
+The application must continue functioning.
+
+Do not block:
+
+* save
+* trip actions
+* navigation
+* search
+* authentication
+
+because an analytics event failed.
+
+---
+
+# 43. AUTHENTICATION RELIABILITY
+
+Test:
+
+* login
+* logout
+* expired session
+* session refresh
+* Google authentication
+* account creation
+* guest-to-account merge
+
+No data should be lost during authentication transitions.
+
+---
+
+# 44. GUEST DATA SAFETY
+
+Verify guest:
+
+* saves
+* visited
+* preferences
+* trips
+
+survive:
+
+* navigation
+* refresh
+* authentication transition
+
+Do not clear local data prematurely.
+
+---
+
+# 45. TRIP RELIABILITY
+
+Test:
+
+* rapid reorder
+* multiple items
+* multiple days
+* duplicate trip
+* delete
+* public/private
+* guest/account merge
+
+Ensure failed mutations do not silently corrupt the itinerary.
+
+---
+
+# 46. CMS RELIABILITY
+
+Test:
+
+* draft
+* publish
+* archive
+* preview
+* edit
+* relationship changes
+* media
+* verification
+
+Ensure drafts never appear publicly.
+
+---
+
+# 47. CONTENT VALIDATION
+
+Create or improve automated content checks.
+
+Flag:
+
+### Festivals
+
+* missing dates
+* invalid dates
+* missing location
+* missing image
+* missing description
+
+### Destinations
+
+* missing best time
+* missing location
+* missing image
+* missing description
+
+Do not automatically publish incomplete content.
+
+---
+
+# 48. DATA INTEGRITY
+
+Check for:
+
+* orphaned records
+* duplicate saves
+* duplicate relationships
+* invalid coordinates
+* invalid slugs
+* invalid dates
+* missing referenced content
+
+Create safe cleanup/migration scripts where necessary.
+
+Do NOT blindly delete questionable data.
+
+---
+
+# 49. TEST SUITE
+
+Create a meaningful automated test suite.
+
+At minimum:
+
+### Unit tests
+
+* date/status logic
+* recommendation scoring
+* explanation generation
+* budget calculations
+* seasonal ranking
+* query normalization
+
+### Integration tests
+
+* authentication
+* saves
+* visited
+* guest merge
+* trip operations
+* admin authorization
+* CMS publishing
+
+### API tests
+
+* authorization
+* validation
+* map query
+* search
+* recommendations
+
+### End-to-end tests
+
+Critical flows:
+
+1. Discover festival.
+2. Save festival.
+3. Open map.
+4. Find destination.
+5. Create trip.
+6. Add items.
+7. Reorder itinerary.
+8. Share public trip.
+9. Guest → account merge.
+10. Admin updates content.
+
+Do not attempt to test every pixel.
+
+Prioritize business-critical behavior.
+
+---
+
+# 50. BUILD PIPELINE
+
+Ensure the project has reliable:
+
+* install
+* lint
+* typecheck
+* test
+* build
+
+commands.
+
+Document them.
+
+---
+
+# 51. CI
+
+If the repository uses GitHub Actions or another CI system:
+
+Create/update a pipeline that runs:
+
+```text id="7q9p0b"
+Install
+↓
+Lint
+↓
+Typecheck
+↓
+Tests
+↓
+Build
+```
+
+Do not deploy broken builds.
+
+If CI already exists, improve it rather than replacing it.
+
+---
+
+# 52. ENVIRONMENT SEPARATION
+
+Ensure clear separation between:
+
+### Development
+
+### Test
+
+### Production
+
+Do not accidentally point development at production data.
+
+---
+
+# 53. DATABASE MIGRATIONS
+
+Verify:
+
+* migrations are committed
+* migrations run cleanly
+* production migration process is documented
+* destructive migrations are safe
+
+Do not modify production schema manually as part of normal deployment.
+
+---
+
+# 54. SEED DATA
+
+Ensure demo/seed data is clearly separated from production content.
+
+Do not accidentally run destructive seed operations against production.
+
+---
+
+# 55. DEPLOYMENT
+
+Prepare the application for the intended hosting platform.
+
+Document:
+
+* environment variables
+* build command
+* start command
+* database setup
+* migration command
+* media configuration
+* map provider configuration
+* authentication configuration
+* analytics configuration
+
+Do not hardcode deployment-specific secrets.
+
+---
+
+# 56. DOMAIN / URL CONFIGURATION
+
+Centralize:
+
+* production base URL
+* canonical URL
+* Open Graph URL
+* sitemap URL
+* authentication callback URLs
+
+Do not scatter hardcoded production URLs throughout the application.
+
+---
+
+# 57. PRODUCTION LOGGING
+
+Ensure production logs are:
+
+* useful
+* structured where possible
+* free of secrets
+* free of unnecessary personal data
+
+Do not log:
+
+* passwords
+* tokens
+* private trip content
+* sensitive user information
+
+---
+
+# 58. HEALTH CHECK
+
+Verify the health endpoint created earlier.
+
+It should be safe for infrastructure monitoring.
+
+Do not expose:
+
+* environment variables
+* database credentials
+* internal stack traces
+
+---
+
+# 59. BACKUPS
+
+Document the database backup strategy.
+
+Do not implement a custom backup system if the database provider already provides managed backups.
+
+Make sure production data recovery is considered.
+
+---
+
+# 60. DISASTER RECOVERY
+
+Document basic recovery procedures for:
+
+* database failure
+* deployment rollback
+* broken migration
+* authentication outage
+* map provider outage
+* media provider outage
+
+Keep the procedures practical.
+
+---
+
+# 61. PROVIDER FAILURE
+
+The product should degrade gracefully if an external provider fails.
+
+### Map unavailable
+
+Show discovery/search alternatives.
+
+### Analytics unavailable
+
+Continue functioning.
+
+### Media unavailable
+
+Use image fallback.
+
+### Authentication provider unavailable
+
+Show useful error.
+
+Do not allow one third-party service to crash the entire product.
+
+---
+
+# 62. ACCESSIBILITY + SEO + PERFORMANCE REGRESSION PROTECTION
+
+Where practical, add automated checks for:
+
+* broken links
+* metadata
+* accessibility
+* build size
+* critical performance
+
+Do not introduce heavyweight testing infrastructure without benefit.
+
+---
+
+# 63. DOCUMENTATION
+
+Update:
+
+```text id="e3b5rb"
+/docs/architecture.md
+/docs/development.md
+/docs/database.md
+/docs/analytics.md
+```
+
+Add:
+
+```text id="i6f5fy"
+/docs/production.md
+/docs/security.md
+/docs/testing.md
+```
+
+Document:
+
+* deployment
+* environment variables
+* migrations
+* backups
+* security decisions
+* testing
+* rollback
+* monitoring
+
+---
+
+# 64. FINAL PRODUCT AUDIT
+
+After hardening, manually inspect the complete product.
+
+Verify the primary journey:
+
+```text id="qg7w7q"
+Homepage
+ ↓
+Explore
+ ↓
+Map
+ ↓
+Festival/Destination
+ ↓
+Save
+ ↓
+Recommendation
+ ↓
+Trip
+ ↓
+Share
+```
+
+Also verify:
+
+```text id="z0lq0v"
+Search
+ ↓
+Result
+ ↓
+Content
+```
+
+and:
+
+```text id="3t2f4x"
+Admin
+ ↓
+Edit content
+ ↓
+Publish
+ ↓
+Public page updated
+```
+
+---
+
+# 65. DO NOT ADD
+
+Do NOT add:
+
+* AI assistant
+* AI itinerary generator
+* booking engine
+* payment system
+* community
+* reviews
+* social network
+* live weather
+* multilingual content
+* multi-currency
+* advanced ML recommendations
+
+Those are future product phases, not production hardening.
+
+---
+
+# 66. FINAL TEST MATRIX
+
+Run:
+
+### Code quality
+
+* lint
+* typecheck
+* unit tests
+* integration tests
+* E2E tests
+* production build
+
+### Security
+
+* dependency audit
+* authorization tests
+* input validation tests
+* secret scan if available
+
+### SEO
+
+* sitemap
+* robots
+* metadata
+* canonical URLs
+* structured data
+* indexability
+
+### Performance
+
+* bundle analysis
+* image optimization
+* map performance
+* search latency
+* recommendation latency
+* database queries
+
+### Accessibility
+
+* keyboard
+* screen-reader basics
+* focus
+* contrast
+* reduced motion
+* mobile
+
+---
+
+# 67. ACCEPTANCE CRITERIA
+
+Phase 12 is complete only when:
+
+* No critical security vulnerabilities remain.
+* Private resources are properly authorized.
+* Admin access is secure.
+* Input validation is enforced server-side.
+* Secrets are not committed.
+* Dependency audit is clean or known issues are documented.
+* Security headers are configured appropriately.
+* Rate limiting/protection exists where needed.
+* File uploads are validated.
+* XSS risks are addressed.
+* SEO metadata is correct.
+* Canonical URLs work.
+* Sitemap works.
+* Robots rules work.
+* Structured data is valid.
+* Private pages are noindex/protected.
+* 404/500 states work.
+* Images are optimized.
+* Map is performant.
+* Search is performant.
+* Recommendation queries are efficient.
+* N+1 issues are addressed.
+* Caching is sensible.
+* Cache invalidation works.
+* Accessibility foundations are solid.
+* Keyboard navigation works.
+* Reduced motion works.
+* Mobile works.
+* Loading states work.
+* Error boundaries work.
+* Analytics failures cannot break the app.
+* Guest data is safe.
+* Trip mutations are reliable.
+* CMS publishing is safe.
+* Draft content never leaks publicly.
+* Data integrity checks exist.
+* Automated tests cover critical flows.
+* CI is configured if applicable.
+* Production configuration is documented.
+* Database migrations are safe.
+* Backup/recovery strategy is documented.
+* Health monitoring works.
+* Production logging is safe.
+* Provider failure is handled gracefully.
+* No earlier functionality is broken.
+* TypeScript passes.
+* Lint passes.
+* Tests pass.
+* Production build passes.
+
+---
+
+# 68. FINAL REPORT
+
+When finished, provide:
+
+1. Security audit summary.
+2. Major security fixes.
+3. SEO improvements.
+4. Performance improvements.
+5. Accessibility improvements.
+6. Database/query optimizations.
+7. Caching strategy.
+8. Error/reliability improvements.
+9. Test coverage and critical flows tested.
+10. CI/deployment setup.
+11. Environment configuration.
+12. Backup/recovery documentation.
+13. Monitoring/observability setup.
+14. Files created/modified.
+15. Remaining known issues.
+16. Recommended final pre-launch checklist.
+
+Do NOT automatically add new features after this phase.
+
+The application should now be considered a production candidate pending final manual QA and deployment-specific configuration.
+
+
+
+# PHASE 13 — FINAL PRODUCT QA, VISUAL POLISH & LAUNCH READINESS
+
+You are now performing the final product-level QA and launch-readiness pass for the India travel discovery platform.
+
+This is NOT a feature-development phase.
+
+The objective is to make the existing product feel like one cohesive, polished, production-ready travel platform.
+
+---
+
+# 1. IMPORTANT RULE
+
+Before making changes:
+
+1. Inspect the entire repository.
+2. Read:
+
+   * `/docs/product-spec.md`
+   * `/docs/architecture.md`
+   * `/docs/database.md`
+   * `/docs/analytics.md`
+   * `/docs/production.md`
+   * `/docs/security.md`
+   * `/docs/testing.md`
+3. Inspect all completed phases.
+4. Run the existing test/build pipeline.
+5. Understand the current implementation before modifying anything.
+
+DO NOT:
+
+* rebuild the architecture
+* replace working libraries unnecessarily
+* introduce new major features
+* redesign the product from scratch
+* remove working functionality
+* create duplicate systems
+
+This phase is about **polish, consistency, QA and launch readiness**.
+
+---
+
+# 2. FULL PRODUCT JOURNEY
+
+Test the entire product as a real traveller.
+
+Primary journey:
+
+```text
+Homepage
+ ↓
+Explore
+ ↓
+Search / Map
+ ↓
+Festival or Destination
+ ↓
+Save
+ ↓
+Recommendation
+ ↓
+Add to Trip
+ ↓
+Trip Planner
+ ↓
+Share
+```
+
+Secondary journey:
+
+```text
+Calendar
+ ↓
+Month
+ ↓
+Festival
+ ↓
+Destination
+ ↓
+Trip
+```
+
+Third journey:
+
+```text
+Hidden India
+ ↓
+Discovery
+ ↓
+Destination
+ ↓
+Experience
+ ↓
+Trip
+```
+
+Admin journey:
+
+```text
+Admin
+ ↓
+Edit content
+ ↓
+Publish
+ ↓
+Public content
+ ↓
+Search / Calendar / Map updated
+```
+
+Test all journeys end-to-end.
+
+---
+
+# 3. VISUAL CONSISTENCY AUDIT
+
+Inspect every major page for consistency.
+
+Check:
+
+* typography
+* font sizes
+* font weights
+* spacing
+* border radius
+* shadows
+* buttons
+* cards
+* icons
+* badges
+* chips
+* navigation
+* section headers
+* dividers
+* colors
+* hover states
+* active states
+* focus states
+
+Use the Phase 2 design system as the source of truth.
+
+If multiple implementations of the same component exist:
+
+Consolidate them where practical.
+
+---
+
+# 4. COMPONENT CONSISTENCY
+
+Audit reusable components such as:
+
+* ContentCard
+* FestivalCard
+* DestinationCard
+* ExperienceCard
+* FoodCard
+* RecommendationCard
+* SaveButton
+* VisitedButton
+* AddToTrip
+* Search
+* Modal
+* BottomSheet
+* Tabs
+* Filters
+* MapPreview
+* SectionHeader
+* EmptyState
+* ErrorState
+* Skeleton
+
+Avoid multiple visually different versions of the same interaction.
+
+---
+
+# 5. HEADER / NAVIGATION
+
+Test navigation across the entire application.
+
+Desktop:
+
+* logo
+* primary navigation
+* search
+* profile
+* active route
+
+Mobile:
+
+* navigation
+* search
+* profile
+* menu/bottom navigation if implemented
+
+Check:
+
+* active states
+* keyboard navigation
+* route transitions
+* browser back button
+* deep links
+
+The navigation should never feel like different products stitched together.
+
+---
+
+# 6. HOMEPAGE AUDIT
+
+Review the homepage as the primary first impression.
+
+It should clearly communicate:
+
+> Discover India differently.
+
+Verify that the homepage connects naturally to:
+
+* Explore
+* Map
+* Festivals
+* Destinations
+* Hidden India
+* Search
+* Calendar
+
+Do not overload the homepage.
+
+Every major section should have a clear purpose.
+
+---
+
+# 7. LIVING INDIA MAP AUDIT
+
+Perform a detailed map QA pass.
+
+Verify:
+
+* initial load
+* India geography
+* state selection
+* city selection
+* markers
+* clusters
+* festivals
+* destinations
+* experiences
+* month selection
+* filters
+* search
+* preview
+* content navigation
+
+Check:
+
+* zoom levels
+* map bounds
+* mobile behavior
+* loading state
+* error state
+
+The map should never become unusable because one data request fails.
+
+---
+
+# 8. MAP VISUAL POLISH
+
+Check:
+
+* marker hierarchy
+* cluster design
+* selected marker
+* hover
+* preview cards
+* map controls
+* labels
+* spacing
+* visual hierarchy
+
+Avoid excessive markers.
+
+The map should remain visually calm.
+
+---
+
+# 9. FESTIVAL EXPERIENCE
+
+Audit:
+
+```text
+/festivals
+/festivals/[slug]
+```
+
+Verify:
+
+* listing
+* filtering
+* cards
+* date status
+* Happening Now
+* Upcoming
+* calendar relationship
+* destination relationship
+* map relationship
+* save
+* visited
+* add to trip
+* sharing
+
+Check that festival pages do not contain stale or contradictory information.
+
+---
+
+# 10. DESTINATION EXPERIENCE
+
+Audit:
+
+```text
+/destinations
+/destinations/[slug]
+```
+
+Verify:
+
+* hero
+* gallery
+* snapshot
+* best time
+* budget
+* experiences
+* food
+* festivals
+* nearby destinations
+* transport
+* accommodation
+* map
+* save
+* visited
+* add to trip
+* sharing
+
+Check that destination pages feel editorial rather than database-generated.
+
+---
+
+# 11. HIDDEN INDIA
+
+Audit:
+
+```text
+/hidden-india
+```
+
+The experience should feel distinct but still belong to the same product.
+
+Check:
+
+* hidden destination cards
+* hidden festivals
+* hidden experiences
+* discovery flow
+* map connections
+* seasonal connections
+
+Do not make the page visually gimmicky.
+
+---
+
+# 12. SEARCH
+
+Perform a complete search QA.
+
+Test:
+
+```text
+Exact name
+Partial name
+Location
+Festival
+Destination
+Experience
+Food
+Typo
+Empty query
+No results
+```
+
+Verify:
+
+* debounce
+* ranking
+* categories
+* result count
+* navigation
+* deep links
+* browser back
+* mobile keyboard behavior
+
+Search should feel fast.
+
+---
+
+# 13. CALENDAR
+
+Audit:
+
+```text
+/calendar
+```
+
+Test every month.
+
+Verify:
+
+* month switching
+* current month
+* festival status
+* upcoming
+* festival links
+* map integration
+* seasonal destination integration
+
+Make sure month selection is consistent throughout the application.
+
+---
+
+# 14. EXPLORE
+
+Audit:
+
+```text
+/explore
+```
+
+Check whether it genuinely acts as the central discovery hub.
+
+It should connect:
+
+* Happening Now
+* This Month
+* Destinations
+* Festivals
+* Hidden India
+* Map
+* Search
+* Calendar
+
+Avoid duplicate sections that already exist elsewhere without adding value.
+
+---
+
+# 15. PERSONALIZATION
+
+Test:
+
+### Anonymous
+
+* generic recommendations
+* seasonal recommendations
+
+### Guest
+
+* preferences
+* personalized recommendations
+* local persistence
+
+### Account
+
+* saved preferences
+* personalized recommendations
+* preference editing
+
+Check recommendation explanations.
+
+They must correspond to actual ranking signals.
+
+---
+
+# 16. ACCOUNT EXPERIENCE
+
+Audit:
+
+```text
+/profile
+```
+
+Test:
+
+* sign in
+* sign out
+* Google login
+* preferences
+* saves
+* visited
+* trips
+
+Make sure account state is consistent after:
+
+* refresh
+* navigation
+* logout
+* login
+
+---
+
+# 17. GUEST → ACCOUNT
+
+Perform a complete migration test.
+
+As guest:
+
+1. Save destination.
+2. Save festival.
+3. Mark destination visited.
+4. Set preferences.
+5. Create trip.
+6. Add multiple items.
+7. Create account.
+8. Verify all data merges.
+
+Then:
+
+9. Refresh.
+10. Log out.
+11. Log back in.
+12. Confirm cloud data remains.
+
+Repeat the merge operation where possible.
+
+No duplicates should appear.
+
+---
+
+# 18. SAVE SYSTEM
+
+Audit every save entry point.
+
+Test:
+
+* Festival
+* Destination
+* Experience
+* Food
+* Map
+* Recommendation
+* Search
+
+Check:
+
+* optimistic UI
+* failure rollback
+* guest persistence
+* account persistence
+* duplicate prevention
+
+---
+
+# 19. VISITED SYSTEM
+
+Audit:
+
+* mark visited
+* unmark visited
+* guest persistence
+* account persistence
+* profile display
+* recommendation interaction
+
+Visited must remain separate from Saved.
+
+---
+
+# 20. TRIP PLANNER
+
+Perform a full itinerary test.
+
+Create:
+
+```text
+Trip
+ ├── Day 1
+ ├── Day 2
+ ├── Day 3
+```
+
+Add:
+
+* destination
+* festival
+* experience
+* food
+
+Test:
+
+* reorder
+* move between days
+* remove
+* duplicate
+* delete
+* budget
+* map
+* sharing
+
+---
+
+# 21. TRIP MAP
+
+Check:
+
+* itinerary locations
+* map synchronization
+* selected item
+* day context
+* ordering visualization
+
+Make sure route visualization does not falsely imply real road directions unless a routing provider is actually being used.
+
+---
+
+# 22. PUBLIC TRIP SHARING
+
+Test:
+
+### Private trip
+
+Anonymous visitor cannot access.
+
+### Public trip
+
+Anonymous visitor can access.
+
+Verify that public trip pages do not expose:
+
+* private account information
+* internal IDs unnecessarily
+* private preferences
+* private notes
+* sensitive data
+
+---
+
+# 23. ADMIN CMS
+
+Perform a full admin workflow.
+
+Test:
+
+```text
+Create
+ ↓
+Draft
+ ↓
+Preview
+ ↓
+Edit
+ ↓
+Publish
+ ↓
+Public page
+```
+
+Then:
+
+```text
+Edit
+ ↓
+Update
+ ↓
+Cache invalidation
+ ↓
+Public page updated
+```
+
+Test:
+
+* festivals
+* destinations
+* experiences
+* food
+* media
+* categories
+* tags
+* verification
+
+---
+
+# 24. CONTENT QUALITY
+
+Inspect demo/seed content.
+
+Remove obviously generic or placeholder-looking content where it would hurt the product presentation.
+
+Ensure:
+
+* no broken images
+* no lorem ipsum
+* no "test destination"
+* no fake reviews
+* no impossible dates
+* no malformed coordinates
+* no broken links
+
+Do not invent real-world facts simply to fill gaps.
+
+If content is clearly demo data, label it appropriately.
+
+---
+
+# 25. DATE CONSISTENCY
+
+Verify all date displays use a consistent format.
+
+Check:
+
+* festival dates
+* expected dates
+* calendar
+* trip dates
+* destination seasonal periods
+
+Do not display a date as confirmed when the underlying status is expected/unconfirmed.
+
+---
+
+# 26. LOCATION CONSISTENCY
+
+Check:
+
+* state names
+* city names
+* geographic labels
+* map labels
+* destination metadata
+* festival metadata
+
+Use the normalized location model.
+
+Do not manually hardcode inconsistent state/city naming in UI.
+
+---
+
+# 27. CURRENCY CONSISTENCY
+
+All V1 prices should consistently use:
+
+```text
+₹
+```
+
+Check:
+
+* destination budget
+* trip budget
+* recommendations
+* cards
+* profile/trip views
+
+Do not introduce dollar/euro formatting accidentally.
+
+---
+
+# 28. EMPTY STATES
+
+Every major feature must have a meaningful empty state.
+
+Audit:
+
+* search
+* saves
+* visited
+* trips
+* itinerary days
+* recommendations
+* calendar
+* admin queues
+
+Avoid generic:
+
+> No data found.
+
+Use helpful next actions.
+
+---
+
+# 29. ERROR STATES
+
+Every major feature must have:
+
+* loading
+* error
+* retry/recovery
+
+Audit:
+
+* map
+* search
+* festivals
+* destinations
+* recommendations
+* profile
+* trips
+* CMS
+
+Errors should be understandable to normal users.
+
+---
+
+# 30. RESPONSIVE QA
+
+Test at minimum:
+
+### Mobile
+
+* 375px
+* 390px
+* 430px
+
+### Tablet
+
+* 768px
+* 1024px
+
+### Desktop
+
+* 1280px
+* 1440px
+* 1920px
+
+Look specifically for:
+
+* horizontal overflow
+* clipped text
+* oversized cards
+* broken grids
+* map issues
+* modal overflow
+* sticky element conflicts
+* navigation problems
+
+Fix responsive problems rather than adding one-off hacks.
+
+---
+
+# 31. ACCESSIBILITY FINAL PASS
+
+Check:
+
+* keyboard navigation
+* visible focus
+* semantic headings
+* form labels
+* button labels
+* alt text
+* ARIA only where needed
+* screen-reader usability
+* contrast
+* reduced motion
+
+Interactive elements must be reachable and understandable without a mouse.
+
+---
+
+# 32. TYPOGRAPHY
+
+Perform a typography audit.
+
+Check:
+
+* heading hierarchy
+* body readability
+* line height
+* text wrapping
+* mobile sizes
+* long destination/festival names
+
+Avoid arbitrary font-size overrides.
+
+Use the established type scale.
+
+---
+
+# 33. SPACING
+
+Audit spacing consistency.
+
+Look for:
+
+* random margins
+* inconsistent card padding
+* inconsistent section gaps
+* uneven page gutters
+
+Use the design tokens.
+
+---
+
+# 34. ICONOGRAPHY
+
+Ensure icon usage is consistent.
+
+Do not mix unrelated icon styles.
+
+Every icon-only button needs an accessible label.
+
+---
+
+# 35. ANIMATION
+
+Audit all motion.
+
+Keep animation:
+
+* subtle
+* purposeful
+* fast
+
+Remove unnecessary animations.
+
+Respect reduced-motion preferences.
+
+---
+
+# 36. LOADING EXPERIENCE
+
+Replace any remaining:
+
+* blank screens
+* giant spinners
+* layout shifts
+
+with appropriate skeleton/progressive loading.
+
+Do not show skeletons for trivial interactions where they create more visual noise than value.
+
+---
+
+# 37. PERFORMANCE FINAL PASS
+
+Run a production build and inspect:
+
+* bundle size
+* largest assets
+* image sizes
+* client-side JavaScript
+* route loading
+* map loading
+* search latency
+* recommendation latency
+
+Fix the highest-impact issues.
+
+Do not optimize tiny issues at the expense of maintainability.
+
+---
+
+# 38. NETWORK AUDIT
+
+Inspect browser network requests.
+
+Look for:
+
+* duplicate requests
+* requests after unmount
+* unnecessary polling
+* oversized payloads
+* requests for invisible sections
+* N+1 API calls
+
+Remove unnecessary traffic.
+
+---
+
+# 39. CONSOLE AUDIT
+
+Run the application and inspect browser/server logs.
+
+There should be no unexpected:
+
+* errors
+* warnings
+* hydration mismatches
+* failed requests
+* missing assets
+
+Do not blindly suppress warnings.
+
+Fix the underlying problem.
+
+---
+
+# 40. HYDRATION
+
+If using server rendering, explicitly test for:
+
+* hydration mismatches
+* browser-only APIs used during SSR
+* date/time rendering differences
+* random IDs
+* localStorage access
+
+Guest/local-storage features must initialize safely.
+
+---
+
+# 41. BROWSER COMPATIBILITY
+
+Verify the core experience in:
+
+* Chrome
+* Edge
+* Safari where available
+* Firefox where practical
+
+Prioritize:
+
+* navigation
+* map
+* search
+* authentication
+* trips
+
+---
+
+# 42. SEO FINAL CHECK
+
+Verify actual generated HTML for public pages.
+
+Check:
+
+* title
+* description
+* canonical
+* OG metadata
+* structured data
+* sitemap
+* robots
+* breadcrumbs
+
+Ensure important content exists in crawlable HTML where appropriate.
+
+---
+
+# 43. INTERNAL LINK AUDIT
+
+Find broken or dead internal links.
+
+Verify:
+
+* festival → destination
+* destination → festival
+* destination → experience
+* destination → food
+* content → map
+* map → content
+* calendar → festival
+* explore → content
+* trip → content
+
+Fix broken routes.
+
+---
+
+# 44. URL AUDIT
+
+Verify all important routes.
+
+At minimum:
+
+```text
+/
+ /explore
+ /map
+ /calendar
+ /festivals
+ /festivals/[slug]
+ /destinations
+ /destinations/[slug]
+ /hidden-india
+ /search
+ /profile
+ /trips
+ /trips/[id]
+ /admin
+```
+
+Check direct navigation to each route.
+
+---
+
+# 45. DATA EDGE CASES
+
+Test:
+
+* empty database
+* one content item
+* many content items
+* missing image
+* missing location
+* missing date
+* missing relationship
+* archived content
+* deleted content
+* expected festival date
+
+The UI must degrade gracefully.
+
+---
+
+# 46. ANALYTICS FINAL CHECK
+
+Verify that important analytics events:
+
+* fire once
+* contain correct properties
+* do not block interactions
+* do not leak private data
+
+Test:
+
+* anonymous
+* guest
+* authenticated
+* admin
+
+---
+
+# 47. SECURITY FINAL CHECK
+
+Run the security checks again after all changes.
+
+Verify:
+
+* authorization
+* admin protection
+* private trips
+* private profile
+* saves
+* visited
+* preferences
+* input validation
+* media upload
+* XSS protection
+* secrets
+
+Do not introduce security regressions during polish.
+
+---
+
+# 48. DATABASE FINAL CHECK
+
+Inspect:
+
+* migrations
+* indexes
+* foreign keys
+* unique constraints
+* orphan records
+* duplicate relationships
+
+Run safe integrity checks.
+
+Do not perform destructive cleanup without evidence.
+
+---
+
+# 49. FINAL BUILD
+
+Run the complete pipeline:
+
+```text
+Install
+ ↓
+Lint
+ ↓
+Typecheck
+ ↓
+Unit tests
+ ↓
+Integration tests
+ ↓
+E2E tests
+ ↓
+Production build
+```
+
+Everything should pass.
+
+---
+
+# 50. RELEASE CHECKLIST
+
+Create:
+
+```text
+/docs/release-checklist.md
+```
+
+Include:
+
+### Environment
+
+* production environment variables
+* authentication callbacks
+* database
+* media
+* map
+* analytics
+
+### Database
+
+* migration status
+* backup status
+
+### SEO
+
+* sitemap
+* robots
+* canonical
+* metadata
+
+### Security
+
+* secrets
+* headers
+* authorization
+
+### Monitoring
+
+* error tracking
+* health check
+* alerts
+
+### Product
+
+* major user flows
+* content quality
+* mobile QA
+
+---
+
+# 51. LAUNCH BLOCKERS
+
+Classify discovered issues:
+
+### P0 — Launch blocker
+
+Examples:
+
+* authentication bypass
+* data loss
+* broken production build
+* private data exposure
+* database corruption
+
+### P1 — Serious
+
+Examples:
+
+* major user journey broken
+* map unusable
+* trip planner broken
+* search unusable
+
+### P2 — Polish
+
+Examples:
+
+* minor spacing issue
+* small responsive problem
+* visual inconsistency
+
+Fix all P0/P1 issues.
+
+Fix P2 issues when practical.
+
+Do not delay launch indefinitely for trivial polish.
+
+---
+
+# 52. FINAL PRODUCT SCORECARD
+
+Create an internal scorecard:
+
+```text
+Product completeness
+Visual consistency
+Accessibility
+Performance
+SEO
+Security
+Reliability
+Analytics
+Content quality
+Mobile experience
+```
+
+Use:
+
+```text
+PASS
+NEEDS ATTENTION
+BLOCKED
+```
+
+Do not use arbitrary numerical scores unless useful.
+
+---
+
+# 53. FINAL ACCEPTANCE CRITERIA
+
+Phase 13 is complete when:
+
+* All primary user journeys work end-to-end.
+* Navigation is consistent.
+* Search works.
+* Map works.
+* Festivals work.
+* Destinations work.
+* Hidden India works.
+* Calendar works.
+* Recommendations work.
+* Accounts work.
+* Saves work.
+* Visited works.
+* Trips work.
+* Public sharing works.
+* Admin CMS works.
+* Publishing works.
+* Analytics work.
+* SEO works.
+* Security checks pass.
+* Accessibility checks pass.
+* Responsive layouts work.
+* No major console errors remain.
+* No major hydration issues remain.
+* No critical broken links remain.
+* No obvious placeholder content remains.
+* No P0 issues remain.
+* No P1 issues remain.
+* TypeScript passes.
+* Lint passes.
+* Tests pass.
+* Production build passes.
+* `/docs/release-checklist.md` exists.
+
+---
+
+# 54. FINAL REPORT
+
+When finished, provide a concise launch-readiness report containing:
+
+1. Overall status.
+2. Major issues found.
+3. Major issues fixed.
+4. Remaining P2 issues.
+5. Visual polish performed.
+6. Accessibility improvements.
+7. Performance improvements.
+8. SEO verification.
+9. Security verification.
+10. Critical user journeys tested.
+11. Browser/device testing performed.
+12. Test/build results.
+13. Production deployment readiness.
+14. Exact files created/modified.
+15. Final recommendation:
+
+```text
+READY FOR DEPLOYMENT
+```
+
+or
+
+```text
+NOT READY — [specific blockers]
+```
+
+Do NOT automatically continue to another implementation phase.
+
+At the end of this phase, stop and wait for the next instruction.
+
+
+
+
+
+
+# PHASE 14 — PRODUCTION DEPLOYMENT, DOMAIN, MONITORING & LAUNCH
+
+You are now preparing the India travel discovery platform for its first real production deployment.
+
+This phase is about:
+
+* deployment
+* production configuration
+* database migration
+* environment variables
+* domain configuration
+* authentication configuration
+* monitoring
+* smoke testing
+* rollback readiness
+
+DO NOT add major product features.
+
+DO NOT redesign the application.
+
+DO NOT refactor working architecture unless required to make deployment safe.
+
+---
+
+# 1. BEFORE DOING ANYTHING
+
+Inspect:
+
+* `/docs/product-spec.md`
+* `/docs/architecture.md`
+* `/docs/database.md`
+* `/docs/analytics.md`
+* `/docs/production.md`
+* `/docs/security.md`
+* `/docs/testing.md`
+* `/docs/release-checklist.md`
+
+Inspect:
+
+* package configuration
+* build configuration
+* environment configuration
+* database configuration
+* authentication configuration
+* map configuration
+* media configuration
+* analytics configuration
+* deployment configuration
+* CI/CD configuration
+
+---
+
+# 2. DETERMINE DEPLOYMENT STACK
+
+Use the deployment stack already configured in the repository.
+
+If the project already uses:
+
+* Vercel
+* Supabase
+* PostgreSQL
+* Cloudinary
+* Mapbox
+* Google OAuth
+* analytics provider
+
+continue using the existing architecture.
+
+Do NOT replace providers simply because another option exists.
+
+---
+
+# 3. ENVIRONMENT VARIABLES
+
+Create/update:
+
+```text
+.env.example
+```
+
+Document every required variable.
+
+Categorize:
+
+### Public
+
+Variables safe for browser exposure.
+
+### Server-only
+
+Secrets that must never reach the client.
+
+Example categories:
+
+```text
+DATABASE_URL
+AUTH_SECRET
+GOOGLE_CLIENT_ID
+GOOGLE_CLIENT_SECRET
+MAP_PROVIDER_KEY
+MEDIA_STORAGE_KEY
+ANALYTICS_KEY
+```
+
+Use the actual variables already present in the repository.
+
+Do not invent unnecessary variables.
+
+---
+
+# 4. SECRET SAFETY
+
+Verify:
+
+* `.env`
+* `.env.local`
+* credentials
+* API keys
+* deployment tokens
+
+are not committed.
+
+Search Git history/current repository for accidentally exposed secrets where practical.
+
+If a real secret is found in Git history:
+
+Do NOT print it.
+
+Explain that it must be rotated.
+
+---
+
+# 5. PRODUCTION DATABASE
+
+Verify the production database.
+
+Before migration:
+
+1. Confirm database connection.
+2. Confirm backup/recovery capability.
+3. Review pending migrations.
+4. Review potentially destructive migrations.
+5. Verify seed scripts are NOT destructive.
+
+Do not run development seed scripts against production.
+
+---
+
+# 6. DATABASE MIGRATION
+
+Run production-safe migrations.
+
+Verify:
+
+* tables
+* indexes
+* constraints
+* foreign keys
+* required extensions
+* geographic data
+* search indexes where applicable
+
+After migration:
+
+Run integrity checks.
+
+Do not silently ignore migration warnings/errors.
+
+---
+
+# 7. PRODUCTION DATA
+
+Determine whether the application currently contains:
+
+### Demo data
+
+or
+
+### Production-ready curated content.
+
+Do not present obviously fake/demo information as real public travel information.
+
+If demo content remains:
+
+* clearly identify it
+* remove it if appropriate
+* replace only with verified content already available
+
+Do not fabricate real-world travel information.
+
+---
+
+# 8. STORAGE / MEDIA
+
+Verify production media storage.
+
+Test:
+
+* upload
+* image retrieval
+* image optimization
+* CDN delivery
+* deletion/archive behavior
+* alt text
+
+Confirm that uploaded images do not depend on the local development filesystem.
+
+---
+
+# 9. MAP PROVIDER
+
+Verify production map configuration.
+
+Test:
+
+* map initialization
+* India view
+* state selection
+* markers
+* clusters
+* viewport queries
+* map search
+* mobile
+* API failure handling
+
+Ensure development API keys are not being used in production.
+
+---
+
+# 10. AUTHENTICATION
+
+Verify production authentication.
+
+Test:
+
+### Email
+
+* signup
+* login
+* logout
+* session persistence
+
+### Google
+
+* OAuth login
+* callback
+* logout
+* account creation/linking
+
+Verify production callback URLs.
+
+Do not expose OAuth secrets.
+
+---
+
+# 11. GUEST EXPERIENCE
+
+Before login, verify:
+
+* browsing
+* map
+* search
+* festivals
+* destinations
+* calendar
+* Explore
+* Hidden India
+* local saves
+* local visited
+* local preferences
+* local trips
+
+Nothing should unnecessarily require authentication.
+
+---
+
+# 12. GUEST → ACCOUNT
+
+Perform the production smoke test:
+
+```text
+Guest
+ ↓
+Save destination
+ ↓
+Save festival
+ ↓
+Mark visited
+ ↓
+Set preferences
+ ↓
+Create trip
+ ↓
+Create account
+ ↓
+Merge
+ ↓
+Verify server data
+```
+
+Ensure no local data is lost.
+
+---
+
+# 13. PRODUCTION AUTHORIZATION
+
+Verify:
+
+### Normal user
+
+Cannot access:
+
+```text
+/admin
+```
+
+Cannot access another user's:
+
+* saves
+* visited
+* preferences
+* trips
+
+### Admin
+
+Can access authorized CMS functionality.
+
+Test server-side authorization, not just UI visibility.
+
+---
+
+# 14. PUBLIC CONTENT
+
+Verify production routes:
+
+```text
+/
+/explore
+/map
+/calendar
+/festivals
+/festivals/[slug]
+/destinations
+/destinations/[slug]
+/hidden-india
+/search
+```
+
+Each must work with a direct URL request.
+
+---
+
+# 15. TRIPS
+
+Verify:
+
+```text
+/trips
+/trips/[id]
+```
+
+Test:
+
+* create
+* edit
+* add item
+* reorder
+* delete
+* duplicate
+* private
+* public
+* shared URL
+
+Do not expose private trip data.
+
+---
+
+# 16. ADMIN
+
+Verify:
+
+```text
+/admin
+/admin/festivals
+/admin/destinations
+/admin/experiences
+/admin/food
+/admin/locations
+/admin/media
+/admin/verification
+/admin/analytics
+```
+
+Test:
+
+* create
+* edit
+* draft
+* preview
+* publish
+* archive
+* relationships
+* verification
+* analytics
+
+---
+
+# 17. PUBLISHING TEST
+
+Perform an end-to-end production-like test:
+
+```text
+Admin
+ ↓
+Create/edit content
+ ↓
+Save draft
+ ↓
+Preview
+ ↓
+Publish
+ ↓
+Public page
+ ↓
+Search
+ ↓
+Calendar
+ ↓
+Map
+```
+
+Verify content propagation and cache invalidation.
+
+---
+
+# 18. SEO PRODUCTION CHECK
+
+Verify production versions of:
+
+```text
+/sitemap.xml
+/robots.txt
+```
+
+Check:
+
+* public pages indexable
+* private pages protected/noindex
+* canonical URLs
+* Open Graph metadata
+* structured data
+
+Use the actual production domain.
+
+---
+
+# 19. DOMAIN
+
+If a custom domain is available:
+
+Configure:
+
+* primary domain
+* HTTPS
+* redirect from alternate domain if appropriate
+* canonical URL
+
+Do not hardcode localhost anywhere.
+
+Search the repository for:
+
+```text
+localhost
+127.0.0.1
+development URLs
+```
+
+Remove production-inappropriate references.
+
+---
+
+# 20. PRODUCTION URL CONFIGURATION
+
+Centralize the production base URL.
+
+Verify it is used consistently for:
+
+* canonical URLs
+* sitemap
+* Open Graph
+* public trip links
+* authentication callbacks
+* redirects
+
+---
+
+# 21. EMAIL
+
+If the authentication provider requires email delivery:
+
+Verify production email configuration.
+
+Test:
+
+* verification email if applicable
+* password recovery if supported
+
+Do not expose provider credentials.
+
+---
+
+# 22. ANALYTICS
+
+Verify production analytics.
+
+Test:
+
+* page views
+* search
+* map
+* festival
+* destination
+* save
+* trip
+* recommendation
+
+Ensure development/test events are not polluting production reporting.
+
+---
+
+# 23. ERROR MONITORING
+
+Verify production error tracking.
+
+Intentionally trigger a safe test error if the monitoring provider supports a test event.
+
+Confirm:
+
+* error received
+* environment = production
+* no secrets/private content included
+
+---
+
+# 24. HEALTH CHECK
+
+Verify:
+
+```text
+/health
+```
+
+or the existing health endpoint.
+
+Confirm:
+
+* application status
+* database status
+
+Do not expose sensitive infrastructure information.
+
+---
+
+# 25. PERFORMANCE SMOKE TEST
+
+Test production performance for:
+
+### Homepage
+
+### Explore
+
+### Map
+
+### Festival page
+
+### Destination page
+
+### Search
+
+### Recommendation
+
+### Trip
+
+Identify any obvious production-only problems.
+
+---
+
+# 26. MOBILE SMOKE TEST
+
+Test production on a real mobile device if available.
+
+Verify:
+
+* navigation
+* map
+* search
+* cards
+* save
+* trip
+* authentication
+* sharing
+
+Pay special attention to:
+
+* viewport height
+* keyboard
+* bottom sheets
+* sticky elements
+
+---
+
+# 27. ERROR SCENARIOS
+
+Test safe failure scenarios:
+
+### Database unavailable
+
+Expected:
+
+Useful error/fallback.
+
+### Map provider unavailable
+
+Expected:
+
+Alternative discovery remains usable.
+
+### Search failure
+
+Expected:
+
+Search error with retry.
+
+### Image unavailable
+
+Expected:
+
+Fallback image/UI.
+
+### Authentication failure
+
+Expected:
+
+Useful authentication error.
+
+### Analytics failure
+
+Expected:
+
+Application continues working.
+
+---
+
+# 28. ROLLBACK PLAN
+
+Document:
+
+### Application rollback
+
+How to revert deployment.
+
+### Database rollback
+
+How to handle failed migrations.
+
+### Content rollback
+
+How to unpublish/archive problematic content.
+
+### Configuration rollback
+
+How to revert environment changes.
+
+Do not claim migrations are reversible unless they actually are.
+
+---
+
+# 29. BACKUP VERIFICATION
+
+Confirm:
+
+* database backups enabled
+* retention understood
+* recovery process documented
+
+If possible, verify that a recent backup exists.
+
+Do not perform destructive restore tests against production.
+
+---
+
+# 30. CI/CD
+
+Verify deployment pipeline:
+
+```text
+Push
+ ↓
+CI
+ ↓
+Lint
+ ↓
+Typecheck
+ ↓
+Tests
+ ↓
+Build
+ ↓
+Deploy
+```
+
+Production deployment should not happen from a failing build.
+
+If preview deployments are available:
+
+Use them for final QA before production.
+
+---
+
+# 31. BRANCHING
+
+Use the repository's existing branching strategy.
+
+Recommended:
+
+```text
+main
+ ↓
+production
+```
+
+or the project's existing equivalent.
+
+Do not invent unnecessary branching complexity.
+
+---
+
+# 32. PRODUCTION LOGGING
+
+Verify:
+
+* structured logs where supported
+* no secrets
+* no passwords
+* no tokens
+* no private trip information
+
+Ensure useful errors include enough context to debug.
+
+---
+
+# 33. RATE LIMITING
+
+Verify production protection exists for:
+
+* authentication
+* search
+* recommendations
+* map APIs
+* admin mutations
+* media operations
+
+Do not create an unnecessarily complex custom solution if the infrastructure already provides one.
+
+---
+
+# 34. CACHING
+
+Verify production caching for:
+
+* public content
+* seasonal discovery
+* search where applicable
+* map data where applicable
+* recommendations
+
+Verify private data is never publicly cached.
+
+---
+
+# 35. FINAL SMOKE TEST
+
+Perform this exact flow:
+
+```text
+1. Open homepage
+2. Open Explore
+3. Open Map
+4. Select a state
+5. Open a destination
+6. Save destination
+7. Open a festival
+8. Save festival
+9. Open Calendar
+10. Select month
+11. Return to Explore
+12. Search for content
+13. Open recommendation
+14. Create trip
+15. Add destination
+16. Add festival
+17. Reorder itinerary
+18. Open trip map
+19. Make trip public
+20. Open public share URL
+21. Log out
+22. Verify private content is protected
+23. Log back in
+24. Verify saved/trip data persists
+```
+
+Fix any blocker discovered.
+
+---
+
+# 36. ADMIN SMOKE TEST
+
+Perform:
+
+```text
+1. Admin login
+2. Open dashboard
+3. Open festival CMS
+4. Edit content
+5. Save draft
+6. Preview
+7. Publish
+8. Open public festival
+9. Search for festival
+10. Check calendar
+11. Check map
+12. Open verification queue
+13. Open analytics
+14. Check audit log
+```
+
+---
+
+# 37. PRODUCTION CHECKLIST
+
+Before declaring launch:
+
+### Infrastructure
+
+* [ ] Production deployment successful
+* [ ] HTTPS active
+* [ ] Domain configured
+* [ ] Environment variables configured
+* [ ] Database connected
+* [ ] Migrations complete
+* [ ] Backups enabled
+* [ ] Media storage working
+* [ ] Map provider working
+
+### Authentication
+
+* [ ] Email authentication working
+* [ ] Google authentication working
+* [ ] Sessions working
+* [ ] Logout working
+* [ ] Authorization verified
+
+### Product
+
+* [ ] Homepage
+* [ ] Explore
+* [ ] Map
+* [ ] Festivals
+* [ ] Destinations
+* [ ] Hidden India
+* [ ] Search
+* [ ] Calendar
+* [ ] Recommendations
+* [ ] Saves
+* [ ] Visited
+* [ ] Trips
+* [ ] Public sharing
+* [ ] Profile
+
+### Admin
+
+* [ ] CMS
+* [ ] Publishing
+* [ ] Verification
+* [ ] Media
+* [ ] Analytics
+* [ ] Audit logs
+
+### SEO
+
+* [ ] Sitemap
+* [ ] Robots
+* [ ] Canonicals
+* [ ] Metadata
+* [ ] Structured data
+
+### Monitoring
+
+* [ ] Error tracking
+* [ ] Health check
+* [ ] Logs
+* [ ] Alerts
+
+---
+
+# 38. LAUNCH STATUS
+
+At the end, classify the deployment as exactly one of:
+
+```text
+READY FOR LAUNCH
+```
+
+or:
+
+```text
+BLOCKED
+```
+
+If blocked, provide only the issues that genuinely prevent launch.
+
+Classify each:
+
+```text
+P0 — Critical
+P1 — Serious
+P2 — Non-blocking
+```
+
+Do not call cosmetic issues launch blockers.
+
+---
+
+# 39. FINAL DEPLOYMENT REPORT
+
+Provide:
+
+## Deployment
+
+* Production URL
+* Deployment platform
+* Deployment status
+* Build version/commit
+
+## Infrastructure
+
+* Database
+* Storage
+* Map provider
+* Authentication
+* Analytics
+* Monitoring
+
+## Verification
+
+* Smoke tests
+* Authentication tests
+* Guest tests
+* Guest → account tests
+* Trip tests
+* Admin tests
+* SEO tests
+* Mobile tests
+
+## Security
+
+* Authorization verified
+* Secrets verified
+* Security headers verified
+* Rate limiting verified
+
+## Monitoring
+
+* Error tracking
+* Health check
+* Logs
+* Alerts
+
+## Remaining Issues
+
+List only genuine issues.
+
+## Final Status
+
+```text
+READY FOR LAUNCH
+```
+
+or
+
+```text
+BLOCKED — [specific blockers]
+```
+
+Do NOT automatically start another development phase after this.
+
+Wait for further instructions.
+
+
+
+

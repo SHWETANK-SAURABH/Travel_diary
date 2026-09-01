@@ -364,6 +364,41 @@ so case-insensitive name-uniqueness is a service-layer check
 (`src/features/taxonomy/admin-service.ts`), the same "service layer owns
 integrity the DB doesn't model" trade-off already documented on `Media`.
 
+## Phase 11: Analytics, Content Intelligence & Observability schema
+
+Migration `20260831200000_analytics_observability` adds one field to an
+existing table and four new ones — full event/field documentation lives in
+[`analytics.md`](./analytics.md); this is the schema shape only.
+
+- **`AnalyticsEvent.anonymousId String?`** (+ index) — a signed-out
+  visitor's stable, client-generated identity. Nullable, since every
+  server-fired event (page/content views) still has none.
+- **`SearchQueryLog`** — `normalizedQuery`, `rawQuery`, `resultCount`,
+  `userId?`, `anonymousId?`, `createdAt`. Every meaningful search, not
+  just zero-result ones. Kept separate from `AnalyticsEvent` specifically
+  because content-opportunity aggregation groups by query text — doing
+  that against a JSON `metadata` blob would mean grouping on an
+  unindexed, un-typed column instead of a real one.
+- **`ContentOpportunityDismissal`** — `normalizedQuery` (`@unique`),
+  `dismissedByUserId`, `createdAt`. A dismissal is keyed by the query
+  text itself, not a specific search event, so it keeps suppressing the
+  opportunity as new identical searches keep arriving. Deleting a
+  dismissal row (not exposed in the admin UI, but a valid direct DB
+  operation) un-hides the opportunity — there's no separate "undo" flag.
+- **`ErrorLog`** — `message`, `stack? @db.Text`, `path?`, `severity`
+  (`ErrorSeverity`: `WARNING | ERROR | CRITICAL`), `metadata Json?`,
+  `createdAt`.
+- **`PerformanceLog`** — `operation`, `durationMs`, `failed Boolean`,
+  `createdAt`. `operation` is a short dotted label (`"map.viewport"`,
+  `"search.query"`, `"nearby.festival"`, ...) matching the wrapped
+  function, not a free-form string — see `src/lib/performance/index.ts`.
+
+All four new tables are admin-only reads (`/admin/analytics`) — none has
+a public API surface. None back-references `AnalyticsEvent` or `AuditLog`;
+each is queried independently and joined only in application code where a
+dashboard section needs more than one (e.g. System Health combines a live
+`SELECT 1` with `ErrorLog`/`PerformanceLog` aggregates).
+
 ## Seed data
 
 `prisma/seed.ts` (`npm run db:seed`) creates a small, clearly-marked demo

@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
-import { containsInsensitive } from "@/lib/search";
+import { containsInsensitive, normalizeQuery } from "@/lib/search";
 import { analytics } from "@/lib/analytics";
+import { measureAsync } from "@/lib/performance";
 import { mediaForMany } from "@/lib/media";
 import type { SearchResponse, SearchResult, SearchSuggestions } from "./types";
 
@@ -110,7 +111,11 @@ async function fuzzyMatchIds(table: "Festival" | "Destination" | "Experience" | 
  * "transparent weighted sum" philosophy as the festival/destination ranking
  * heuristics.
  */
-export async function search(query: string, userId?: string): Promise<SearchResponse> {
+export async function search(query: string, userId?: string, anonymousId?: string): Promise<SearchResponse> {
+  return measureAsync("search.query", () => searchImpl(query, userId, anonymousId));
+}
+
+async function searchImpl(query: string, userId?: string, anonymousId?: string): Promise<SearchResponse> {
   const trimmed = query.trim();
   if (trimmed.length < MIN_QUERY_LENGTH) {
     return { query: trimmed, results: [], usedFuzzyMatch: false };
@@ -315,11 +320,20 @@ export async function search(query: string, userId?: string): Promise<SearchResp
     }),
   ];
 
-  await analytics.track({
-    type: results.length === 0 ? "SEARCH_ZERO_RESULT" : "SEARCH_QUERY",
-    userId,
-    metadata: { query: trimmed, resultCount: results.length, rawMatchCount, usedFuzzyMatch },
-  });
+  await Promise.all([
+    analytics.track({
+      type: results.length === 0 ? "SEARCH_ZERO_RESULT" : "SEARCH_QUERY",
+      userId,
+      metadata: { query: trimmed, resultCount: results.length, rawMatchCount, usedFuzzyMatch },
+    }),
+    // Content Intelligence's own log (spec §8/§9) — every meaningful search,
+    // not just zero-result ones, so opportunity scoring has real volume/trend
+    // history; kept separate from AnalyticsEvent so grouping by query doesn't
+    // mean aggregating a JSON blob (see schema comment on SearchQueryLog).
+    db.searchQueryLog.create({
+      data: { normalizedQuery: normalizeQuery(trimmed), rawQuery: trimmed, resultCount: results.length, userId, anonymousId },
+    }),
+  ]);
 
   return { query: trimmed, results, usedFuzzyMatch };
 }

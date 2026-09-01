@@ -10,6 +10,6 @@ export async function GET(request: Request) {
     return NextResponse.json({ query: "", results: [], usedFuzzyMatch: false });
   }
 
-  const response = await search(parsed.data.q);
+  const response = await search(parsed.data.q, undefined, parsed.data.anonId);
   return NextResponse.json(response);
 }

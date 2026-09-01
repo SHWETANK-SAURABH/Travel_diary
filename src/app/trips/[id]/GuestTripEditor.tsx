@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
@@ -89,6 +89,13 @@ export function GuestTripEditor({ tripId }: { tripId: string }) {
     }));
   }, [trip, resolvedItems]);
 
+  const hasTrackedOpen = useRef(false);
+  useEffect(() => {
+    if (hasTrackedOpen.current || !hasHydrated || !trip) return;
+    hasTrackedOpen.current = true;
+    trackClientEvent({ type: "TRIP_INTERACTION", contentId: tripId, metadata: { action: "opened", guest: true } });
+  }, [hasHydrated, trip, tripId]);
+
   if (!hasHydrated) {
     return <Skeleton className="h-96 w-full" />;
   }
@@ -129,7 +136,10 @@ export function GuestTripEditor({ tripId }: { tripId: string }) {
       onUpdateMeta={(patch) => updateTripMeta(tripId, patch)}
       onAddDay={() => updateTripMeta(tripId, applyDayCountDelta(trip.startDate, trip.endDate, trip.days, 1))}
       onRemoveDay={() => updateTripMeta(tripId, applyDayCountDelta(trip.startDate, trip.endDate, trip.days, -1))}
-      onRemoveItem={(itemId) => removeTripItem(tripId, itemId)}
+      onRemoveItem={(itemId) => {
+        removeTripItem(tripId, itemId);
+        trackClientEvent({ type: "TRIP_INTERACTION", contentId: tripId, metadata: { action: "item_removed", itemId, guest: true } });
+      }}
       onMoveItemDay={(itemId, day) => {
         moveTripItemToDay(tripId, itemId, day);
         trackClientEvent({ type: "TRIP_INTERACTION", contentId: tripId, metadata: { action: "day_changed", guest: true } });

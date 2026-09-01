@@ -1,18 +1,21 @@
 "use client";
 
 import type { AnalyticsEventInput } from "./adapter";
+import { getAnonymousId } from "./anonymous-id";
 
 /**
  * Client-side analytics call site — POSTs to /api/analytics/track rather
  * than importing the adapter directly (which pulls in Prisma and can't run
  * in the browser). Fire-and-forget: a dropped analytics event should never
- * break the UI interaction that triggered it.
+ * break the UI interaction that triggered it. Every client-fired event
+ * automatically carries the visitor's anonymous id — callers never pass
+ * one themselves.
  */
-export function trackClientEvent(event: Omit<AnalyticsEventInput, "userId">) {
+export function trackClientEvent(event: Omit<AnalyticsEventInput, "userId" | "anonymousId">) {
   fetch("/api/analytics/track", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(event),
+    body: JSON.stringify({ ...event, anonymousId: getAnonymousId() }),
     keepalive: true,
   }).catch(() => {
     // Best-effort — never surface analytics failures to the user.

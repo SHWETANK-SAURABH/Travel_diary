@@ -49,6 +49,7 @@ export function useSavedState(kind: DiscoveryKind, id: string, source?: string) 
 
   async function toggle() {
     setError(null);
+    const wasSaved = saved;
 
     if (session) {
       const previous = Boolean(data?.saved);
@@ -62,6 +63,7 @@ export function useSavedState(kind: DiscoveryKind, id: string, source?: string) 
         if (!res.ok) throw new Error("request failed");
         const result = (await res.json()) as { saved: boolean };
         queryClient.setQueryData(queryKey, result);
+        trackClientEvent({ type: "SAVE", contentType, contentId: id, metadata: { saved: result.saved, ...(source ? { source } : {}) } });
       } catch {
         queryClient.setQueryData(queryKey, { saved: previous });
         setError("Couldn't save — try again.");
@@ -69,9 +71,8 @@ export function useSavedState(kind: DiscoveryKind, id: string, source?: string) 
       }
     } else {
       guestToggle(contentType, id);
+      trackClientEvent({ type: "SAVE", contentType, contentId: id, metadata: { saved: !wasSaved, ...(source ? { source } : {}) } });
     }
-
-    trackClientEvent({ type: "SAVE", contentType, contentId: id, metadata: source ? { source } : undefined });
   }
 
   return { saved, toggle, error };

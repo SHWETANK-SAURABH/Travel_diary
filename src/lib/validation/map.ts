@@ -49,6 +49,7 @@ export const analyticsEventSchema = z.object({
   contentType: z.enum(["FESTIVAL", "DESTINATION", "EXPERIENCE", "FOOD", "EVENT"]).optional(),
   contentId: z.string().max(200).optional(),
   metadata: z.record(z.string(), z.unknown()).optional(),
+  anonymousId: z.string().uuid().optional(),
 });
 
 export const toggleSavedSchema = z.object({

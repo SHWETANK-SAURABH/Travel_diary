@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import { useGuestStore } from "@/lib/guest/store";
 import { trackClientEvent } from "@/lib/analytics/client";
+import { getAnonymousId } from "@/lib/analytics/anonymous-id";
 import type { GuestState } from "@/lib/guest/types";
 
 function hasGuestContent(state: GuestState): boolean {
@@ -17,6 +18,7 @@ function mergeGuestState(state: GuestState & { clear: () => void }, onFailure: (
     visitedItems: state.visitedItems,
     trips: state.trips,
     preferences: state.preferences,
+    analyticsAnonymousId: getAnonymousId() ?? undefined,
   };
 
   return fetch("/api/guest/merge", {

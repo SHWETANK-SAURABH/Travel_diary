@@ -1983,4 +1983,277 @@ being written off.
 
 ---
 
-<!-- Phase 11+ reports appended below as each phase completes. -->
+## Phase 11 — Analytics, Content Intelligence & Product Observability
+
+**Status: complete.**
+
+### Summary
+
+Audited every existing analytics event against the phase spec's ~50-event
+checklist, fixed the real gaps found (a `SAVE` event that couldn't tell
+save from unsave; several missing trip events; a genuine duplicate-event
+risk in server-fired `PAGE_VIEW`s), and added the two layers that didn't
+exist yet: **Content Intelligence** (every meaningful search logged to its
+own table, zero-result queries aggregated into scored, dismissible
+"content opportunities") and **Technical Observability** (error capture,
+per-operation performance timing, a health-check endpoint). Built
+`/admin/analytics` — Overview, Activity-over-time chart, Discovery,
+Search, Content Opportunities, Recommendations, Trips, System Health, all
+behind Phase 10's existing authorization stack. Full event/architecture
+documentation now lives in the newly-required `docs/analytics.md`.
+
+### 1. Analytics architecture
+
+Three deliberately separate tables for three deliberately separate
+concerns (spec §2's "do not mix these together"): `AnalyticsEvent`
+(product behavior, pre-existing since Phase 1) untouched in shape except
+one addition (`anonymousId`); `SearchQueryLog` +
+`ContentOpportunityDismissal` (new, Content Intelligence); `ErrorLog` +
+`PerformanceLog` (new, Technical Observability). No new external
+dependency anywhere — no charting library, no error-tracking SDK, no APM
+client. Every new capability reuses the exact adapter-plus-DB-provider
+shape `src/lib/analytics` and `src/lib/audit` (Phase 10) already
+established: a plain input interface, a function that writes one row, and
+never throws on its own failure.
+
+### 2. Event naming convention
+
+Unchanged from every prior phase and now written down explicitly for the
+first time (`docs/analytics.md`): a small set of `SCREAMING_SNAKE_CASE`
+`AnalyticsEventType` enum values, each disambiguated where needed by a
+`snake_case` string in `metadata.action`. Continued rather than replaced
+with the spec's flat `snake_case`-event-name sketch (`map_opened`,
+`search_submitted`, ...) — the two conventions say the same thing, but the
+enum gives Postgres a real, indexed, typo-proof column to group by, which
+five prior phases' worth of events already depend on.
+
+### 3. Major tracked events
+
+Audited all ~50 spec-named events against actual call sites (full table
+in `docs/analytics.md`). Confirmed already covered: page/festival/
+destination views, the whole map interaction set, search open/result-
+click/zero-result, calendar/explore interactions, the full onboarding/
+preference/recommendation set, auth + guest-merge, save/visited. Fixed:
+`SAVE` previously fired identically for save *and* unsave with no way to
+tell them apart — now carries `metadata.saved: boolean`, mirroring
+`VISITED`'s existing pattern. Added: `TRIP_INTERACTION` `"opened"`
+(mount-once-guarded), `"item_removed"`, and `"shared"` — three trip
+lifecycle events the app performed but never recorded. Deliberately left
+uncovered: experience/food "viewed" (no public detail page exists for
+either yet — nothing to track a view *of*), city/cluster map selection,
+and "search refined" (spec's own "do not track every UI interaction," and
+the last one was already explicitly excluded in this codebase's Phase 6
+reasoning).
+
+### 4. Search / content opportunity system
+
+New `SearchQueryLog` table records every meaningful search (not just
+zero-result ones) — `normalizeQuery()` (lowercase, trim, collapse
+whitespace/trailing punctuation) is the grouping key, `rawQuery` is kept
+for display. `getContentOpportunities()`
+(`src/features/analytics/content-intelligence.ts`) aggregates zero-result
+searches over the last 90 days, drops anything under 3 occurrences as
+noise, and scores the rest with a documented, non-AI formula:
+`score = recentSearches(≤30d) × 2 + olderSearches(31–90d) × 1` — every row
+here is zero-result by construction, so volume weighted toward recency is
+the only real signal left to rank on. Each opportunity offers four
+actions (spec §47): search existing festivals/destinations for a
+near-match, jump to creating one, or dismiss — dismissal hides the
+opportunity (via `ContentOpportunityDismissal`, keyed by the normalized
+query) without deleting the underlying search history.
+
+### 5. Admin analytics dashboard
+
+`/admin/analytics`, gated by the same three-layer authorization Phase 10
+built (route middleware, layout session check, `requireAdmin()` per
+query) — no new authorization code. Today/7d/30d/90d date ranges, each
+comparison stat showing raw counts alongside a percentage that's withheld
+(shown as "vs N prior" instead) whenever the prior period's count is
+below 10, per spec §28's sample-size caution. One combined "Activity over
+time" line chart (views/searches/saves/trips as four series) rather than
+the spec's four separate small multiples — see #the chart section below.
+Sections: Overview, Activity, Discovery (top festivals/destinations by
+view count), Search (top queries + zero-result counts), Content
+Opportunities, Recommendations, Trips (created, average itinerary size,
+most-added content, public shares), System Health.
+
+**Charts:** hand-rolled inline SVG, no library — followed the `dataviz`
+skill's method end to end, including running its palette validator. The
+app's own brand palette (marigold/navy/terracotta) *fails* categorical
+chart-series validation (lightness band, chroma floor, CVD adjacent-pair
+separation) when checked, so `ActivityLineChart` deliberately draws its
+four series from the skill's own validated reference palette instead
+(confirmed passing: `node validate_palette.js "#2a78d6,#eb6834,#1baf7a,#eda100"
+--mode light` → all checks pass) — scoped to chart marks only; every
+other admin surface (badges, buttons, `StatusPill`) keeps the app's brand
+colors unchanged.
+
+### 6. Recommendation analytics
+
+Impressions (`RECOMMENDATION_VIEWED`, already deduped since Phase 7 via a
+mount-guard ref) and clicks (`RECOMMENDATION_CLICK`) counted directly.
+"Saved"/"added to trip" have no dedicated event types — they reuse the
+generic `SAVE`/`ADD_TO_TRIP` events, attributed to a recommendation
+surface by a truthy `metadata.source` (checked in application code, not a
+Prisma JSON-path filter — simpler and more robust than expressing
+"present and truthy" against Postgres's JSON null semantics at this event
+volume). This mirrors how the app already avoided adding
+`RECOMMENDATION_SAVED`/`RECOMMENDATION_ADDED_TO_TRIP` variants back in
+Phase 7 — same action, different originating card.
+
+### 7. Trip / account analytics
+
+Trips: created count, average itinerary size (computed from live
+`Trip`/`TripItem` rows, not analytics events, since that's the ground
+truth), most-added destinations/festivals (`TripItem` grouped by
+`contentId`), public shares (`TRIP_INTERACTION` `action:"shared"`, new
+this phase). Account: signup/login/logout/guest-merge conversion already
+existed via `AUTH_INTERACTION`/`GUEST_MERGE` (Phase 8) and needed no
+changes — the dashboard doesn't currently surface a dedicated Account
+section, since Phase 8's own account metrics (saved/visited/trip counts)
+already live on `/admin`'s dashboard from Phase 10 and duplicating them
+here was judged unnecessary.
+
+### 8. Error tracking
+
+`src/lib/errors/index.ts`'s `captureError()` — no vendor SDK (none
+installed, none configured; same reasoning Phase 10 applied to Media
+storage). Writes `message`/`stack`/`path`/`severity` to `ErrorLog`,
+console-logs unconditionally, never throws on its own failure. Wired into
+`src/app/error.tsx` (route-segment boundary — Next.js 16 renamed the
+`reset` prop to `retry`, confirmed against `node_modules/next/dist/docs`
+before writing this per this repo's own `AGENTS.md`) and
+`src/app/global-error.tsx` (root-layout boundary — deliberately
+plain/dependency-free markup, since this file *replaces* the root layout
+when active and can't rely on its fonts/providers/router context being
+alive). Both POST to `/api/errors/capture`, a Zod-validated, unauthenticated
+route (error reporting has to work for a visitor who isn't signed in).
+
+### 9. Performance monitoring
+
+`measureAsync()` (`src/lib/performance/index.ts`) wraps a named operation,
+times it, and unconditionally logs duration + success/failure to
+`PerformanceLog` — not sampled, since V1 traffic is low enough that
+logging every call is cheap (documented retention keeps the table
+bounded, see #12). Applied to exactly the surfaces spec §33–§36 name:
+`map.viewport`, `search.query`, `recommendations.destinations`/
+`.festivals`, `nearby.festival`/`.destination` — each wrapped by renaming
+the existing function's body to a private `...Impl` and exporting a thin
+`measureAsync(...)` wrapper, so no internal logic changed.
+
+### 10. Health-check implementation
+
+`GET /api/health` — no authentication (an uptime monitor/load balancer
+can't sign in), checks database connectivity via a bare `SELECT 1`,
+returns `{status, checks: {application, database}, timestamp}` with a 503
+on failure. No internal topology, query plans, or secrets in the
+response. `/admin/analytics`'s System Health section adds admin-only
+context on top: 24h error count, 24h slow-request count (>1s), and
+average search/map latency, computed from `ErrorLog`/`PerformanceLog`.
+
+### 11. Privacy approach
+
+Never sent to analytics: passwords, auth tokens, private trip notes,
+raw preference values, or anything not on the explicit event list in
+`docs/analytics.md`. `metadata` payloads are hand-assembled per call site,
+never a serialized request/response dump. Admin analytics are aggregate
+wherever the underlying question is aggregate by nature (no screen shows
+one visitor's individual search/browsing history); `/admin/analytics`
+carries the identical three-layer authorization every other `/admin/*`
+route has. Anonymous identity is a random client-generated UUID, never a
+fingerprint — see #the known gap below for its one honest limitation.
+
+### 12. Data retention approach
+
+Documented in `docs/analytics.md` as an explicit policy for a future
+scheduled job (not automated in this phase — no cron/scheduled-task
+infrastructure exists yet to hang it on): 12 months for
+`AnalyticsEvent`/`SearchQueryLog` (long enough to compare season over
+season, which matters for a seasonal-travel product), 30 days for
+`ErrorLog`/`PerformanceLog` (operational signal, not historical trend),
+indefinite for `AuditLog` (Phase 10, compliance-shaped) and
+`ContentOpportunityDismissal` (a standing editorial decision, not a log
+line).
+
+### 13. Documentation created
+
+`docs/analytics.md` (new, required by spec §49) — the full event catalog,
+naming convention, anonymous-identity design (including its one honest
+gap), duplicate-prevention strategy, Content Intelligence scoring formula,
+Technical Observability implementation, admin dashboard structure, and
+retention policy. `docs/architecture.md` and `docs/database.md` updated
+with pointers into it rather than duplicating its content.
+
+### Files created/modified
+
+New: `src/lib/analytics/{anonymous-id,merge-identity}.ts`, `src/lib/search/
+normalize.ts`, `src/lib/errors/index.ts`, `src/lib/performance/index.ts`,
+`src/features/analytics/{content-intelligence,admin-service}.ts`,
+`src/components/admin/charts/ActivityLineChart.tsx`, `src/app/admin/
+analytics/**` (page, actions, `ContentOpportunities`), `src/app/api/
+{health,errors/capture}/route.ts`, `src/app/{error,global-error}.tsx`,
+`prisma/migrations/20260831200000_analytics_observability/`,
+`docs/analytics.md`. Modified: `prisma/schema.prisma`,
+`src/lib/analytics/{adapter,client,index}.ts` and `providers/db-provider.ts`
+(anonymous id + dedupe window), `src/app/api/analytics/track/route.ts`,
+`src/lib/validation/{map,guest,search,index}.ts` (+ new `errors.ts`),
+`src/features/search/service.ts` (`SearchQueryLog` write + perf wrap),
+`src/features/{map,recommendations,festivals,destinations}/service.ts`
+(perf wraps), `src/components/discovery/useSavedState.ts` (save-direction
+fix), `src/app/trips/[id]/AccountTripEditor.tsx` +
+`GuestTripEditor.tsx` (opened/item_removed/shared events),
+`src/components/account/GuestMergeSync.tsx` +
+`src/app/api/guest/merge/route.ts` (analytics identity merge),
+`src/components/layout/HeaderSearch.tsx` (anonymous id on live search),
+`src/components/admin/AdminSidebar.tsx` (Analytics nav entry),
+`docs/{architecture,database}.md`.
+
+### Tests/checks performed
+
+`npm run typecheck`, `npm run lint`, `npm run build` — all clean. Full
+headless-Chromium verification against the **production build**: the
+health endpoint returning `{status:"healthy"}`; a real search recording
+to `SearchQueryLog`; three repeated zero-result searches for a unique
+nonsense query correctly surfacing as a content opportunity with the
+right score; dismissing it correctly emptying the Content Opportunities
+section (verified with a direct server-side diagnostic after an initial
+false alarm — the query legitimately still appearing in the separate,
+intentionally-undismissable "Top Searches" table was mistaken for a
+dismiss failure by an overly broad test assertion; a scoped check
+confirmed the actual dismiss logic was correct all along); save/unsave
+correctly toggling `metadata.saved`; a client error report round-tripping
+through `/api/errors/capture` into `ErrorLog`; the admin analytics
+dashboard rendering real data across every section including a working
+chart, date-range switching, and system health reflecting real error/
+performance counts; authorization boundaries (anonymous/non-admin/admin);
+and a regression sweep of `/explore`, `/map`, `/trips`, `/admin`.
+
+### Known limitations
+
+- **Anonymous identity is client-only.** A visitor's UUID lives in
+  `localStorage` and is attached only by `trackClientEvent()` — events
+  fired directly from Server Component render code (`PAGE_VIEW`,
+  `FESTIVAL_VIEW`, `DESTINATION_VIEW`) never carry one, only a `userId`
+  when signed in. Threading it through server-rendered events would mean
+  writing an identity cookie from `src/proxy.ts`, today scoped only to
+  `/admin/:path*` — broadening a security-critical file's matcher was
+  judged out of scope for this phase's risk tolerance. Documented rather
+  than silently left unexplained.
+- **`SEARCH_QUERY` carries two different metadata shapes** — the search
+  service's own `{query, resultCount, rawMatchCount, usedFuzzyMatch}` and
+  the map's inline result-selection `{source:"map", kind, name}`, a
+  pre-existing overlap from Phase 3/6 left as-is (renaming an
+  already-shipped event type was judged a bigger change than this
+  phase's scope) but now documented in `docs/analytics.md` so a future
+  query against `SEARCH_QUERY` rows knows to expect both.
+- **No scheduled retention job** — the policy is documented (#12) but not
+  automated; nothing currently deletes old rows.
+- **Recommendation "saved"/"added to trip" attribution** relies on
+  `metadata.source` being set by the calling card, which is a convention,
+  not an enforced contract — a future card that forgets to pass `source`
+  would undercount silently rather than error loudly.
+- No automated tests — same gap noted in every prior phase.
+
+---
+
+<!-- Phase 12+ reports appended below as each phase completes. -->

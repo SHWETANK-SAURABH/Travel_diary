@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
 import { padBoundingBox, type BoundingBox } from "@/lib/geo";
+import { measureAsync } from "@/lib/performance";
 import { getLocationIdsForState } from "@/features/locations/service";
 import { getDestinationDiscoveryFeed, getNearbyToDestination } from "@/features/destinations/service";
 import { isInSeason } from "@/features/destinations/seasonal";
@@ -85,6 +86,13 @@ function anonymousDestinationReasons(d: { featured: boolean; popularity: string 
  *    and picks a diverse top N (selectDiverse).
  */
 export async function recommendDestinations(
+  context: RecommendationContext,
+  limit = 5
+): Promise<{ recommendations: Recommendation<DestinationRecommendationItem>[]; personalized: boolean }> {
+  return measureAsync("recommendations.destinations", () => recommendDestinationsImpl(context, limit));
+}
+
+async function recommendDestinationsImpl(
   context: RecommendationContext,
   limit = 5
 ): Promise<{ recommendations: Recommendation<DestinationRecommendationItem>[]; personalized: boolean }> {
@@ -208,6 +216,13 @@ function anonymousFestivalReasons(f: { featured: boolean; popularity: string }):
 
 /** Mirrors recommendDestinations — see its docstring for the two-path shape. */
 export async function recommendFestivals(
+  context: RecommendationContext,
+  limit = 5
+): Promise<{ recommendations: Recommendation<FestivalRecommendationItem>[]; personalized: boolean }> {
+  return measureAsync("recommendations.festivals", () => recommendFestivalsImpl(context, limit));
+}
+
+async function recommendFestivalsImpl(
   context: RecommendationContext,
   limit = 5
 ): Promise<{ recommendations: Recommendation<FestivalRecommendationItem>[]; personalized: boolean }> {

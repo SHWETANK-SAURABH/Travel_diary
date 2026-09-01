@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { boundingBoxWhere, padBoundingBox, type BoundingBox } from "@/lib/geo";
 import { containsInsensitive } from "@/lib/search";
+import { measureAsync } from "@/lib/performance";
 import { getLocationIdsForState } from "@/features/locations/service";
 import { mediaFor, mediaForMany } from "@/lib/media";
 import { rankDestinations } from "./ranking";
@@ -117,6 +118,10 @@ export async function getDestinationMedia(destinationId: string) {
 
 /** Geographic "nearby" for a destination page — other destinations within ~150km, excluding itself. */
 export async function getNearbyToDestination(destination: { id: string; latitude: number | null; longitude: number | null }, limit = 4) {
+  return measureAsync("nearby.destination", () => getNearbyToDestinationImpl(destination, limit));
+}
+
+async function getNearbyToDestinationImpl(destination: { id: string; latitude: number | null; longitude: number | null }, limit = 4) {
   if (destination.latitude == null || destination.longitude == null) return [];
 
   const point: BoundingBox = {

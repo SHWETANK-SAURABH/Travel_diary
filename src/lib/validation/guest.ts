@@ -52,4 +52,6 @@ export const guestStateSchema = z.object({
     })
   ),
   preferences: guestPreferencesSchema.nullable(),
+  /** The guest's localStorage analytics id (spec §6: "do not create unnecessary duplicate identities" on sign-in) — used only to re-key their pre-signup AnalyticsEvent/SearchQueryLog rows onto the new account, never stored as guest content itself. */
+  analyticsAnonymousId: z.string().uuid().optional(),
 });

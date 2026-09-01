@@ -787,3 +787,33 @@ to answer "what did the system say before an admin changed it," without
 duplicate live storage. Verified: overriding a destination's best-time
 months flips its badge to "Admin-overridden" and the audit log shows the
 prior months/source in that entry's metadata.
+
+## Phase 11: Analytics, Content Intelligence & Product Observability
+
+Full event catalog, naming convention, anonymous-identity design, and
+duplicate-prevention strategy now live in their own document —
+[`docs/analytics.md`](./analytics.md) — rather than growing this file
+further; it's the single source of truth a future phase should read (and
+extend) before adding a new event. The short version of what changed
+architecturally:
+
+- **Three separate concerns, three separate tables**, deliberately not
+  merged: `AnalyticsEvent` (product behavior, pre-existing), `SearchQueryLog`
+  + `ContentOpportunityDismissal` (content intelligence, new), `ErrorLog` +
+  `PerformanceLog` (technical observability, new). Spec §2's "do not mix
+  these concepts together" is enforced at the schema level, not just by
+  convention.
+- **No new external dependency.** No charting library, no error-tracking
+  SDK, no APM client — `package.json` had none of these before this phase
+  and still doesn't. Charts are hand-rolled inline SVG (the `dataviz`
+  skill's method, see `ActivityLineChart`'s docstring for why its series
+  colors deliberately aren't the app's own brand palette); error/
+  performance capture are the same lightweight adapter pattern
+  `src/lib/analytics`/`src/lib/audit` already established, applied to two
+  more concerns rather than reached for a vendor.
+- **`/admin/analytics` reuses Phase 10's authorization stack wholesale** —
+  same `requireAdmin()`, same three-layer defense-in-depth, no new
+  authorization code written for this phase.
+
+See `docs/analytics.md` for events, `docs/database.md` for the schema, and
+the Phase 11 section of `docs/report.md` for what was tested.

@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { TripVisibility } from "@prisma/client";
 import { TripPlannerView, type TripMeta } from "./TripPlannerView";
 import type { TripItemView } from "@/components/trips";
 import type { TripBudgetEstimate, FestivalConflict, TripSuggestionItem } from "@/features/trips/types";
 import { applyDayCountDelta } from "@/lib/trip/duration";
+import { trackClientEvent } from "@/lib/analytics/client";
 
 export interface AccountTripEditorProps {
   tripId: string;
@@ -51,6 +52,15 @@ export function AccountTripEditor({ tripId, initialMeta, initialItems, initialBu
   const [suggestions, setSuggestions] = useState(initialSuggestions);
   const [shareCopied, setShareCopied] = useState(false);
 
+  // Mount-once guard (same pattern as RecommendationRail's view tracking) —
+  // an effect re-running (Strict Mode, a parent re-render) must not double-count.
+  const hasTrackedOpen = useRef(false);
+  useEffect(() => {
+    if (hasTrackedOpen.current) return;
+    hasTrackedOpen.current = true;
+    trackClientEvent({ type: "TRIP_INTERACTION", contentId: tripId, metadata: { action: "opened" } });
+  }, [tripId]);
+
   const refresh = useCallback(async () => {
     const res = await fetch(`/api/trips/${tripId}`);
     if (!res.ok) return;
@@ -87,6 +97,7 @@ export function AccountTripEditor({ tripId, initialMeta, initialItems, initialBu
   async function handleRemoveItem(itemId: string) {
     setItems((prev) => prev.filter((i) => i.id !== itemId));
     await fetch(`/api/trips/${tripId}/items/${itemId}`, { method: "DELETE" });
+    trackClientEvent({ type: "TRIP_INTERACTION", contentId: tripId, metadata: { action: "item_removed", itemId } });
     await refresh();
   }
 
@@ -119,6 +130,7 @@ export function AccountTripEditor({ tripId, initialMeta, initialItems, initialBu
     }
     await navigator.clipboard.writeText(`${window.location.origin}/trips/${tripId}/share`);
     setShareCopied(true);
+    trackClientEvent({ type: "TRIP_INTERACTION", contentId: tripId, metadata: { action: "shared" } });
     setTimeout(() => setShareCopied(false), 2000);
   }
 

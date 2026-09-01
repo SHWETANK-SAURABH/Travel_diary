@@ -7,6 +7,7 @@ import { SearchOverlay, SearchResultGroup } from "@/components/ui";
 import { TrackedLink } from "@/components/discovery";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
 import { trackClientEvent } from "@/lib/analytics/client";
+import { getAnonymousId } from "@/lib/analytics/anonymous-id";
 import type { SearchResult, SearchResultType, SearchSuggestions } from "@/features/search/types";
 
 const GROUP_LABELS: Record<SearchResultType, string> = {
@@ -37,7 +38,8 @@ export function HeaderSearch() {
     // `.then()`.
     if (!open || queryTooShort) return;
     const controller = new AbortController();
-    fetch(`/api/search/suggest?q=${encodeURIComponent(trimmedValue)}`, { signal: controller.signal })
+    const anonymousId = getAnonymousId();
+    fetch(`/api/search/suggest?q=${encodeURIComponent(trimmedValue)}${anonymousId ? `&anonId=${anonymousId}` : ""}`, { signal: controller.signal })
       .then((res) => res.json())
       .then((data: { results: SearchResult[] }) => {
         setResults(data.results ?? []);

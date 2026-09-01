@@ -15,6 +15,7 @@ interface NavSection {
 
 const NAV: NavSection[] = [
   { items: [{ href: "/admin", label: "Dashboard" }] },
+  { items: [{ href: "/admin/analytics", label: "Analytics" }] },
   {
     label: "Content",
     items: [

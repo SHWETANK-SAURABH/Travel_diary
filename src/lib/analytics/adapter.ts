@@ -3,6 +3,8 @@ import type { AnalyticsEventType, ContentType } from "@prisma/client";
 export interface AnalyticsEventInput {
   type: AnalyticsEventType;
   userId?: string | null;
+  /** Client-generated, localStorage-persisted id — the only identity a signed-out visitor carries (spec §6). Absent on server-fired events (see src/lib/analytics/anonymous-id.ts). */
+  anonymousId?: string | null;
   path?: string;
   contentType?: ContentType;
   contentId?: string;

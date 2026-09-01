@@ -184,6 +184,7 @@ model User {
   verifiedFestivals FestivalOccurrence[] @relation("OccurrenceVerifiedBy")
   analyticsEvents   AnalyticsEvent[]
   auditLogs         AuditLog[]
+  dismissedOpportunities ContentOpportunityDismissal[]
 
   @@index([email])
 }
@@ -737,6 +738,11 @@ model AnalyticsEvent {
   type   AnalyticsEventType
   userId String?
   user   User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  /// Client-generated, localStorage-persisted id (Phase 11) — the only identity
+  /// a signed-out visitor carries. Never a fingerprint/device id; just a random
+  /// UUID a browser can clear at will. Backfilled onto the account's rows on
+  /// sign-in (see src/lib/guest/merge.ts) rather than left orphaned.
+  anonymousId String?
 
   path        String?
   contentType ContentType?
@@ -748,6 +754,92 @@ model AnalyticsEvent {
   @@index([type])
   @@index([createdAt])
   @@index([contentType, contentId])
+  @@index([anonymousId])
+}
+
+// ---------------------------------------------------------------------------
+// Content Intelligence (Phase 11) — a dedicated pipeline for "what are
+// travellers looking for that the platform doesn't cover," kept separate
+// from AnalyticsEvent because aggregating/grouping a JSON metadata blob by
+// query text for threshold-based opportunity detection doesn't scale the
+// way a real indexed column does. Every meaningful search is logged here
+// (not just zero-result ones) so volume/trend scoring has real history to
+// work from — the opportunity query itself filters to resultCount = 0.
+// ---------------------------------------------------------------------------
+
+model SearchQueryLog {
+  id String @id @default(cuid())
+
+  /// Lowercased/whitespace-collapsed (src/lib/search/normalize.ts) — the
+  /// grouping key for opportunity aggregation. `rawQuery` preserves what the
+  /// user actually typed, for display only.
+  normalizedQuery String
+  rawQuery        String
+  resultCount     Int
+
+  userId      String?
+  anonymousId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([normalizedQuery])
+  @@index([createdAt])
+  @@index([resultCount])
+}
+
+/// "Dismissing should not delete analytics data — it only hides the
+/// opportunity from the current workflow" (spec). A dismissal is keyed by
+/// the normalized query, not a specific SearchQueryLog row, so it keeps
+/// suppressing the opportunity as new identical searches keep arriving.
+model ContentOpportunityDismissal {
+  id              String @id @default(cuid())
+  normalizedQuery String @unique
+
+  dismissedByUserId String
+  dismissedBy       User   @relation(fields: [dismissedByUserId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Technical Observability (Phase 11) — deliberately minimal: this is not a
+// log-aggregation platform (spec §31/§39 explicitly warn against building
+// one). ErrorLog captures exceptions/route failures only; PerformanceLog
+// captures duration for a small, named set of already-identified expensive
+// query surfaces (map viewport, search, recommendations, nearby). Both are
+// admin-only reads, never public.
+// ---------------------------------------------------------------------------
+
+enum ErrorSeverity {
+  WARNING
+  ERROR
+  CRITICAL
+}
+
+model ErrorLog {
+  id       String        @id @default(cuid())
+  message  String
+  stack    String?       @db.Text
+  path     String?
+  severity ErrorSeverity @default(ERROR)
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([severity])
+  @@index([createdAt])
+}
+
+model PerformanceLog {
+  id         String @id @default(cuid())
+  operation  String
+  durationMs Int
+  failed     Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@index([operation])
+  @@index([createdAt])
 }
 
 // ---------------------------------------------------------------------------

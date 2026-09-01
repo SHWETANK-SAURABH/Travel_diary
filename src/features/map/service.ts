@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { boundingBoxWhere } from "@/lib/geo";
 import { containsInsensitive } from "@/lib/search";
+import { measureAsync } from "@/lib/performance";
 import { listFestivalsInViewport } from "@/features/festivals/service";
 import { listDestinationsInViewport } from "@/features/destinations/service";
 import { getLocationIdsForState } from "@/features/locations/service";
@@ -15,6 +16,10 @@ import type { MapDiscovery, MapSearchResult, MapViewportQuery, StateSummary } fr
  * see src/features/map/types.ts.
  */
 export async function getViewportContent(query: MapViewportQuery): Promise<MapDiscovery[]> {
+  return measureAsync("map.viewport", () => getViewportContentImpl(query));
+}
+
+async function getViewportContentImpl(query: MapViewportQuery): Promise<MapDiscovery[]> {
   const { box, month } = query;
 
   const [festivals, destinations, experiences, events] = await Promise.all([

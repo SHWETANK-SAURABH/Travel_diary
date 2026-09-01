@@ -1,6 +1,7 @@
 import { db } from "@/lib/db";
 import { boundingBoxWhere, padBoundingBox, type BoundingBox } from "@/lib/geo";
 import { containsInsensitive } from "@/lib/search";
+import { measureAsync } from "@/lib/performance";
 import { getLocationIdsForState } from "@/features/locations/service";
 import { listDestinationsInViewport } from "@/features/destinations/service";
 import { mediaFor, mediaForMany } from "@/lib/media";
@@ -157,6 +158,10 @@ export async function getFestivalMedia(festivalId: string) {
  * raw proximity.
  */
 export async function getNearbyToFestival(festival: { id: string; latitude: number | null; longitude: number | null }, limit = 4) {
+  return measureAsync("nearby.festival", () => getNearbyToFestivalImpl(festival, limit));
+}
+
+async function getNearbyToFestivalImpl(festival: { id: string; latitude: number | null; longitude: number | null }, limit = 4) {
   if (festival.latitude == null || festival.longitude == null) {
     return { festivals: [], destinations: [] };
   }

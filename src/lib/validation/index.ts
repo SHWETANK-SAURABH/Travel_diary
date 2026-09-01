@@ -5,3 +5,4 @@ export * from "./preferences";
 export * from "./recommendations";
 export * from "./trips";
 export * from "./admin";
+export * from "./errors";
