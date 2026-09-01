@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { X, Search } from "lucide-react";
 import { Input } from "@/components/ui";
 import { useDebouncedValue } from "@/lib/hooks/useDebouncedValue";
@@ -37,6 +37,7 @@ export function RelationPicker({ label, searchType, value, onChange, single = fa
   const [results, setResults] = useState<RelationOption[]>([]);
   const [searched, setSearched] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const inputId = useId();
   const selectedIds = new Set(value.map((v) => v.id));
 
   // Same debounce-and-fetch shape as the header's universal search
@@ -84,14 +85,16 @@ export function RelationPicker({ label, searchType, value, onChange, single = fa
 
   return (
     <div ref={rootRef} className="flex flex-col gap-1.5">
-      <span className="text-sm font-medium text-ink">{label}</span>
+      <label htmlFor={inputId} className="text-sm font-medium text-ink">
+        {label}
+      </label>
 
       {value.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {value.map((item) => (
             <span key={item.id} className="inline-flex items-center gap-1 rounded-full bg-marigold-50 py-1 pr-1.5 pl-2.5 text-xs text-marigold-600">
               {item.name}
-              <button type="button" onClick={() => remove(item.id)} aria-label={`Remove ${item.name}`} className="rounded-full p-0.5 hover:bg-marigold-100">
+              <button type="button" onClick={() => remove(item.id)} aria-label={`Remove ${item.name}`} className="flex h-6 w-6 items-center justify-center rounded-full hover:bg-marigold-100">
                 <X className="h-3 w-3" aria-hidden="true" />
               </button>
             </span>
@@ -103,6 +106,7 @@ export function RelationPicker({ label, searchType, value, onChange, single = fa
         <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted" aria-hidden="true" />
           <Input
+            id={inputId}
             value={query}
             onFocus={() => setOpen(true)}
             onChange={(e) => {

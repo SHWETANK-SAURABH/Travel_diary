@@ -11,6 +11,11 @@ interface SharePageProps {
   params: Promise<{ id: string }>;
 }
 
+// No searchParams/auth()/cookies() here, so without this Next would
+// statically prerender the page at build time and freeze it — wrong for a
+// public itinerary that its owner can keep editing after the first view.
+export const dynamic = "force-dynamic";
+
 export async function generateMetadata({ params }: SharePageProps): Promise<Metadata> {
   const { id } = await params;
   const trip = await getSharedTrip(id);

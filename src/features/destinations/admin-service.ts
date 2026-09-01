@@ -194,15 +194,23 @@ export async function adminUpdateDestination(session: Session | null, id: string
 
 export async function adminSetDestinationStatus(session: Session | null, id: string, status: ContentStatus) {
   requireAdmin(session);
-  const destination = await db.destination.update({ where: { id }, data: { status }, select: { id: true, name: true } });
-  await audit.record({ adminId: session.user.id, action: status === "PUBLISHED" ? "published" : status === "ARCHIVED" ? "archived" : "unpublished", entityType: "DESTINATION", entityId: id, entityLabel: destination.name });
-  return destination;
+  try {
+    const destination = await db.destination.update({ where: { id }, data: { status }, select: { id: true, name: true } });
+    await audit.record({ adminId: session.user.id, action: status === "PUBLISHED" ? "published" : status === "ARCHIVED" ? "archived" : "unpublished", entityType: "DESTINATION", entityId: id, entityLabel: destination.name });
+    return destination;
+  } catch (error) {
+    throw friendlyDbError(error);
+  }
 }
 
 /** Mark the best-time recommendation reviewed/confirmed as-is, without changing the value itself. */
 export async function adminVerifyDestinationBestTime(session: Session | null, id: string) {
   requireAdmin(session);
-  const destination = await db.destination.update({ where: { id }, data: { bestTimeSource: "ADMIN_VERIFIED", verificationStatus: "ADMIN_VERIFIED", lastVerifiedAt: new Date() }, select: { id: true, name: true } });
-  await audit.record({ adminId: session.user.id, action: "best_time_verified", entityType: "DESTINATION", entityId: id, entityLabel: destination.name });
-  return destination;
+  try {
+    const destination = await db.destination.update({ where: { id }, data: { bestTimeSource: "ADMIN_VERIFIED", verificationStatus: "ADMIN_VERIFIED", lastVerifiedAt: new Date() }, select: { id: true, name: true } });
+    await audit.record({ adminId: session.user.id, action: "best_time_verified", entityType: "DESTINATION", entityId: id, entityLabel: destination.name });
+    return destination;
+  } catch (error) {
+    throw friendlyDbError(error);
+  }
 }

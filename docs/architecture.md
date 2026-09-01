@@ -817,3 +817,37 @@ architecturally:
 
 See `docs/analytics.md` for events, `docs/database.md` for the schema, and
 the Phase 11 section of `docs/report.md` for what was tested.
+
+## Phase 12: Production Hardening
+
+Not a features phase — an audit-and-fix pass across all 11 prior phases'
+code, per spec §12's own instruction to "produce an internal audit summary
+before making large changes." Full findings, fixes, and the accepted-risk
+list live in the newly-required `docs/security.md`, `docs/production.md`,
+`docs/testing.md`. The one recurring architectural pattern worth calling
+out here:
+
+- **`/trips/[id]/share/page.tsx` reproduced the exact static-freeze bug
+  class `docs/architecture.md` already documented once, for `/hidden-
+  india`** ("Static rendering can silently freeze a 'live' content page",
+  above): a page with no `searchParams`/`auth()`/`cookies()` use and no
+  explicit `dynamic`/`revalidate` export gets Next's Full Route Cache
+  treatment — cached indefinitely after the first request. A public trip
+  share link is exactly the kind of "looks static, isn't" page this bites:
+  the owner edits their itinerary, and every visitor after the first kept
+  seeing the pre-edit version. Fixed the same way `/hidden-india` and
+  `/explore` were: `export const dynamic = "force-dynamic"`. This is now
+  the third page this exact bug class has hit across three different
+  phases — worth treating as a standing review item (new dynamic content
+  page? check for a dynamic API or an explicit `dynamic` export) rather
+  than something to keep rediscovering per-page.
+- **Security headers** (`X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy`, `Permissions-Policy`) added in `next.config.ts`,
+  sitewide. A Content-Security-Policy was deliberately not added — see
+  `docs/security.md` for why guessing one blind was judged worse than
+  documenting the gap.
+- **A real test suite exists for the first time** — Vitest for pure logic
+  (`src/**/*.test.ts`), Playwright for the three journeys spec §64 names
+  explicitly (`tests/e2e/`). See `docs/testing.md`, including the one real
+  bug (`resolveFestivalStatus`/`daysUntil`'s calendar-day math) the unit
+  suite caught on its first run.

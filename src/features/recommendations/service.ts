@@ -59,6 +59,15 @@ function geoKeyFor(location: { id: string; parentId: string | null; type: string
 /** A mild, non-exclusionary penalty applied when a candidate is already marked visited (spec §35: "avoid repeatedly recommending... do not completely exclude"). */
 const VISITED_PENALTY = 0.6;
 
+/**
+ * Caps the personalized-path candidate fetch so it can't become an unbounded
+ * table scan as published content grows. Large enough that scoring +
+ * selectDiverse still have a rich, varied pool to pick `limit` (typically 5)
+ * items from; `featured: "desc"` first so the pool can't fill up on
+ * unfeatured rows and drop featured ones the scorer would otherwise rank top.
+ */
+const RECOMMENDATION_CANDIDATE_CAP = 200;
+
 async function getVisitedContentIds(userId: string | undefined, contentType: "FESTIVAL" | "DESTINATION"): Promise<Set<string>> {
   if (!userId) return new Set();
   const rows = await db.visitedContent.findMany({ where: { userId, contentType }, select: { contentId: true } });
@@ -138,6 +147,8 @@ async function recommendDestinationsImpl(
       locationId: stateLocationIds ? { in: stateLocationIds } : undefined,
     },
     select: DESTINATION_PERSONALIZED_SELECT,
+    orderBy: { featured: "desc" },
+    take: RECOMMENDATION_CANDIDATE_CAP,
   });
 
   const [media, visitedIds] = await Promise.all([
@@ -268,6 +279,8 @@ async function recommendFestivalsImpl(
       locationId: stateLocationIds ? { in: stateLocationIds } : undefined,
     },
     select: FESTIVAL_PERSONALIZED_SELECT,
+    orderBy: { featured: "desc" },
+    take: RECOMMENDATION_CANDIDATE_CAP,
   });
 
   const [media, visitedIds] = await Promise.all([

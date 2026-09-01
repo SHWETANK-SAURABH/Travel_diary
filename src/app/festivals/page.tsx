@@ -9,6 +9,11 @@ import type { ContentPopularity } from "@prisma/client";
 export const metadata: Metadata = {
   title: "Festivals",
   description: "Browse India's festivals — regional, harvest, food, arts and modern celebrations.",
+  // Every state/month/category/popularity filter combination renders at this
+  // same path via query params — canonicalize to the unfiltered page so
+  // search engines consolidate signal here instead of indexing each filtered
+  // permutation as a separate page.
+  alternates: { canonical: "/festivals" },
 };
 
 interface PageProps {

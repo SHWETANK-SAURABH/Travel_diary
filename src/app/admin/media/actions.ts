@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { adminCreateMedia, adminUpdateMedia, adminDeleteMedia, type MediaWriteInput } from "@/features/media/admin-service";
-import { mediaFormSchema, updateMediaFormSchema } from "@/lib/validation";
+import { mediaFormSchema, updateMediaFormSchema, idSchema } from "@/lib/validation";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -38,6 +38,7 @@ export async function updateMediaAction(id: string, input: unknown): Promise<Act
 }
 
 export async function deleteMediaAction(id: string): Promise<ActionResult<null>> {
+  if (!idSchema.safeParse(id).success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminDeleteMedia(session, id);

@@ -161,6 +161,15 @@
   }
 }
 
+/* Global focus-visible fallback — most interactive components already opt in
+   with their own `focus-visible:outline-*` utility, but this backstops any
+   element that doesn't (a plain <a>, a third-party control), so keyboard
+   focus is never invisible anywhere in the app. */
+:focus-visible {
+  outline: 2px solid var(--color-marigold-500);
+  outline-offset: 2px;
+}
+
 body {
   font-family: var(--font-sans);
 }

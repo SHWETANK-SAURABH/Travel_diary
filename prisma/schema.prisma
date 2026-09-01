@@ -449,6 +449,7 @@ model FestivalOccurrence {
   @@unique([festivalId, year])
   @@index([year])
   @@index([dateConfidence])
+  @@index([verifiedByUserId])
 }
 
 // ---------------------------------------------------------------------------
@@ -542,6 +543,7 @@ model Experience {
 
   @@index([locationId])
   @@index([latitude, longitude])
+  @@index([status])
 }
 
 // ---------------------------------------------------------------------------
@@ -571,6 +573,7 @@ model Food {
   festivals    Festival[]    @relation("FestivalFoods")
 
   @@index([locationId])
+  @@index([status])
 }
 
 // ---------------------------------------------------------------------------
@@ -725,6 +728,7 @@ model TripItem {
 
   @@index([tripId, day, order])
   @@index([contentType, contentId])
+  @@index([locationId])
 }
 
 // ---------------------------------------------------------------------------
@@ -755,6 +759,7 @@ model AnalyticsEvent {
   @@index([createdAt])
   @@index([contentType, contentId])
   @@index([anonymousId])
+  @@index([userId])
 }
 
 // ---------------------------------------------------------------------------
@@ -799,6 +804,8 @@ model ContentOpportunityDismissal {
   dismissedBy       User   @relation(fields: [dismissedByUserId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
+
+  @@index([dismissedByUserId])
 }
 
 // ---------------------------------------------------------------------------

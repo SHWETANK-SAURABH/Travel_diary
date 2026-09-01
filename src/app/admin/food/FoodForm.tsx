@@ -106,7 +106,7 @@ export function FoodForm({ mode, initial }: { mode: "create" | "edit"; initial?:
         </div>
       )}
 
-      {error && <p className="text-caption text-danger">{error}</p>}
+      {error && <p role="alert" className="text-caption text-danger">{error}</p>}
       <div className="border-t border-border pt-4">
         <Button onClick={handleSave} loading={saving} disabled={!name.trim() || !description.trim()}>
           {mode === "create" ? "Create food" : "Save changes"}

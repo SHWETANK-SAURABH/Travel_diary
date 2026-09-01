@@ -12,7 +12,7 @@ import {
   type OccurrenceInput,
 } from "@/features/festivals/admin-service";
 import { adminCreateMedia, adminDeleteMedia, type MediaWriteInput } from "@/features/media/admin-service";
-import { festivalFormSchema, updateFestivalFormSchema, festivalOccurrenceSchema, festivalVerificationSchema, mediaFormSchema } from "@/lib/validation";
+import { festivalFormSchema, updateFestivalFormSchema, festivalOccurrenceSchema, festivalVerificationSchema, mediaFormSchema, contentStatusSchema, idSchema } from "@/lib/validation";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -50,6 +50,7 @@ export async function updateFestivalAction(id: string, input: unknown): Promise<
 }
 
 export async function setFestivalStatusAction(id: string, status: "DRAFT" | "PUBLISHED" | "ARCHIVED"): Promise<ActionResult<null>> {
+  if (!idSchema.safeParse(id).success || !contentStatusSchema.safeParse(status).success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminSetFestivalStatus(session, id, status);
@@ -106,6 +107,7 @@ export async function addFestivalMediaAction(input: unknown): Promise<ActionResu
 }
 
 export async function deleteFestivalMediaAction(mediaId: string, festivalId: string): Promise<ActionResult<null>> {
+  if (!idSchema.safeParse(mediaId).success || !idSchema.safeParse(festivalId).success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminDeleteMedia(session, mediaId);

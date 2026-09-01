@@ -1,6 +1,13 @@
 import { z } from "zod";
 
-const statusSchema = z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]);
+export const contentStatusSchema = z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]);
+/** A Prisma cuid id passed as a bare Server Action argument (not inside a form-object schema) — every action that takes one validates it with this before it reaches the DB layer. */
+export const idSchema = z.string().trim().min(1).max(100);
+export const categoryDomainSchema = z.enum(["FESTIVAL_CATEGORY", "DESTINATION_CATEGORY"]);
+export const adminSearchQuerySchema = z.object({
+  type: z.enum(["festival", "destination", "experience", "food", "location", "tag", "festivalCategory", "destinationCategory"]),
+  q: z.string().trim().max(200).optional(),
+});
 const precisionSchema = z.enum(["EXACT", "APPROXIMATE"]);
 const popularitySchema = z.enum(["POPULAR", "HIDDEN", "LOCAL_EMERGING"]);
 const recurrenceSchema = z.enum(["ANNUAL_FIXED_DATE", "ANNUAL_LUNAR_OR_REGIONAL_CALENDAR", "ANNUAL_VARIABLE", "ONE_TIME", "IRREGULAR"]);
@@ -21,7 +28,7 @@ export const festivalFormSchema = z.object({
   slug: z.string().trim().max(200).optional(), // blank/omitted -> derive from name
   description: z.string().trim().min(1).max(20_000),
   categoryId: z.string().min(1),
-  status: statusSchema.optional(),
+  status: contentStatusSchema.optional(),
   popularity: popularitySchema.optional(),
   featured: z.boolean().optional(),
 
@@ -70,7 +77,7 @@ export const destinationFormSchema = z.object({
   slug: z.string().trim().max(200).optional(),
   description: z.string().trim().min(1).max(20_000),
   categoryId: z.string().min(1).optional(),
-  status: statusSchema.optional(),
+  status: contentStatusSchema.optional(),
   popularity: popularitySchema.optional(),
   featured: z.boolean().optional(),
 
@@ -108,7 +115,7 @@ export const experienceFormSchema = z.object({
   slug: z.string().trim().max(200).optional(),
   description: z.string().trim().min(1).max(20_000),
   category: z.string().trim().max(100).optional(),
-  status: statusSchema.optional(),
+  status: contentStatusSchema.optional(),
   featured: z.boolean().optional(),
   locationId: z.string().min(1),
   latitude: z.number().min(-90).max(90).optional(),
@@ -124,7 +131,7 @@ export const foodFormSchema = z.object({
   slug: z.string().trim().max(200).optional(),
   description: z.string().trim().min(1).max(20_000),
   region: z.string().trim().max(100).optional(),
-  status: statusSchema.optional(),
+  status: contentStatusSchema.optional(),
   featured: z.boolean().optional(),
   locationId: z.string().min(1).optional(),
   tagIds: z.array(z.string()).max(50).optional(),
@@ -190,3 +197,10 @@ export const tagFormSchema = z.object({
   category: tagCategorySchema.optional(),
 });
 export const updateTagFormSchema = tagFormSchema.partial();
+export const tagNameSchema = tagFormSchema.shape.name;
+
+// ---------------------------------------------------------------------------
+// Content intelligence — bare scalar arguments
+// ---------------------------------------------------------------------------
+
+export const dismissedQuerySchema = z.string().trim().min(1).max(500);

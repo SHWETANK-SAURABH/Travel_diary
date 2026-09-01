@@ -172,9 +172,13 @@ export async function adminUpdateFestival(session: Session | null, id: string, i
 /** Publish/unpublish/archive — the one action every admin table row exposes directly, spec §27. */
 export async function adminSetFestivalStatus(session: Session | null, id: string, status: ContentStatus) {
   requireAdmin(session);
-  const festival = await db.festival.update({ where: { id }, data: { status }, select: { id: true, name: true, status: true } });
-  await audit.record({ adminId: session.user.id, action: status === "PUBLISHED" ? "published" : status === "ARCHIVED" ? "archived" : "unpublished", entityType: "FESTIVAL", entityId: id, entityLabel: festival.name });
-  return festival;
+  try {
+    const festival = await db.festival.update({ where: { id }, data: { status }, select: { id: true, name: true, status: true } });
+    await audit.record({ adminId: session.user.id, action: status === "PUBLISHED" ? "published" : status === "ARCHIVED" ? "archived" : "unpublished", entityType: "FESTIVAL", entityId: id, entityLabel: festival.name });
+    return festival;
+  } catch (error) {
+    throw friendlyDbError(error);
+  }
 }
 
 export interface OccurrenceInput {
@@ -198,46 +202,54 @@ export async function adminUpsertFestivalOccurrence(session: Session | null, fes
   const festival = await db.festival.findUnique({ where: { id: festivalId }, select: { name: true } });
   if (!festival) throw new Error("Festival not found");
 
-  const occurrence = await db.festivalOccurrence.upsert({
-    where: { festivalId_year: { festivalId, year: input.year } },
-    create: {
-      festivalId,
-      year: input.year,
-      startDate: input.startDate,
-      endDate: input.endDate,
-      dateConfidence: input.dateConfidence,
-      source: input.source,
-      notes: input.notes,
-      ...(input.dateConfidence === "ADMIN_VERIFIED" ? { verifiedByUserId: session.user.id, verifiedAt: new Date() } : {}),
-    },
-    update: {
-      startDate: input.startDate,
-      endDate: input.endDate,
-      dateConfidence: input.dateConfidence,
-      source: input.source,
-      notes: input.notes,
-      ...(input.dateConfidence === "ADMIN_VERIFIED" ? { verifiedByUserId: session.user.id, verifiedAt: new Date() } : {}),
-    },
-  });
+  try {
+    const occurrence = await db.festivalOccurrence.upsert({
+      where: { festivalId_year: { festivalId, year: input.year } },
+      create: {
+        festivalId,
+        year: input.year,
+        startDate: input.startDate,
+        endDate: input.endDate,
+        dateConfidence: input.dateConfidence,
+        source: input.source,
+        notes: input.notes,
+        ...(input.dateConfidence === "ADMIN_VERIFIED" ? { verifiedByUserId: session.user.id, verifiedAt: new Date() } : {}),
+      },
+      update: {
+        startDate: input.startDate,
+        endDate: input.endDate,
+        dateConfidence: input.dateConfidence,
+        source: input.source,
+        notes: input.notes,
+        ...(input.dateConfidence === "ADMIN_VERIFIED" ? { verifiedByUserId: session.user.id, verifiedAt: new Date() } : {}),
+      },
+    });
 
-  await audit.record({
-    adminId: session.user.id,
-    action: "date_updated",
-    entityType: "FESTIVAL_OCCURRENCE",
-    entityId: occurrence.id,
-    entityLabel: `${festival.name} (${input.year})`,
-    metadata: { year: input.year, dateConfidence: input.dateConfidence },
-  });
-  return occurrence;
+    await audit.record({
+      adminId: session.user.id,
+      action: "date_updated",
+      entityType: "FESTIVAL_OCCURRENCE",
+      entityId: occurrence.id,
+      entityLabel: `${festival.name} (${input.year})`,
+      metadata: { year: input.year, dateConfidence: input.dateConfidence },
+    });
+    return occurrence;
+  } catch (error) {
+    throw friendlyDbError(error);
+  }
 }
 
 export async function adminSetFestivalVerification(session: Session | null, id: string, verificationStatus: VerificationStatus, verificationSource?: string) {
   requireAdmin(session);
-  const festival = await db.festival.update({
-    where: { id },
-    data: { verificationStatus, verificationSource, lastVerifiedAt: new Date() },
-    select: { id: true, name: true },
-  });
-  await audit.record({ adminId: session.user.id, action: "verification_updated", entityType: "FESTIVAL", entityId: id, entityLabel: festival.name, metadata: { verificationStatus } });
-  return festival;
+  try {
+    const festival = await db.festival.update({
+      where: { id },
+      data: { verificationStatus, verificationSource, lastVerifiedAt: new Date() },
+      select: { id: true, name: true },
+    });
+    await audit.record({ adminId: session.user.id, action: "verification_updated", entityType: "FESTIVAL", entityId: id, entityLabel: festival.name, metadata: { verificationStatus } });
+    return festival;
+  } catch (error) {
+    throw friendlyDbError(error);
+  }
 }

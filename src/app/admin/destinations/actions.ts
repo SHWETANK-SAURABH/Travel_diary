@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { adminCreateDestination, adminUpdateDestination, adminSetDestinationStatus, adminVerifyDestinationBestTime, type DestinationWriteInput } from "@/features/destinations/admin-service";
 import { adminCreateMedia, adminDeleteMedia, type MediaWriteInput } from "@/features/media/admin-service";
-import { destinationFormSchema, updateDestinationFormSchema, mediaFormSchema } from "@/lib/validation";
+import { destinationFormSchema, updateDestinationFormSchema, mediaFormSchema, contentStatusSchema, idSchema } from "@/lib/validation";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -42,6 +42,7 @@ export async function updateDestinationAction(id: string, input: unknown): Promi
 }
 
 export async function setDestinationStatusAction(id: string, status: "DRAFT" | "PUBLISHED" | "ARCHIVED"): Promise<ActionResult<null>> {
+  if (!idSchema.safeParse(id).success || !contentStatusSchema.safeParse(status).success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminSetDestinationStatus(session, id, status);
@@ -54,6 +55,7 @@ export async function setDestinationStatusAction(id: string, status: "DRAFT" | "
 }
 
 export async function verifyDestinationBestTimeAction(id: string): Promise<ActionResult<null>> {
+  if (!idSchema.safeParse(id).success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminVerifyDestinationBestTime(session, id);
@@ -80,6 +82,7 @@ export async function addDestinationMediaAction(input: unknown): Promise<ActionR
 }
 
 export async function deleteDestinationMediaAction(mediaId: string, destinationId: string): Promise<ActionResult<null>> {
+  if (!idSchema.safeParse(mediaId).success || !idSchema.safeParse(destinationId).success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminDeleteMedia(session, mediaId);

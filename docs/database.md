@@ -399,6 +399,17 @@ each is queried independently and joined only in application code where a
 dashboard section needs more than one (e.g. System Health combines a live
 `SELECT 1` with `ErrorLog`/`PerformanceLog` aggregates).
 
+## Phase 12: hardening indexes
+
+The performance audit found 6 FK/filter columns without an index despite
+the "every FK" claim above — `Experience.status`, `Food.status`,
+`FestivalOccurrence.verifiedByUserId`, `TripItem.locationId`,
+`AnalyticsEvent.userId`, `ContentOpportunityDismissal.dismissedByUserId`
+(migration `20260901090000_hardening_indexes`). Each was a genuine gap
+(not intentionally omitted), found by reading every `where`/`orderBy` in
+`src/features/**/service.ts` against the actual index list rather than
+trusting this doc's own prior claim.
+
 ## Seed data
 
 `prisma/seed.ts` (`npm run db:seed`) creates a small, clearly-marked demo

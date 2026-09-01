@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { adminCreateCategory, adminUpdateCategory, adminDeleteCategory, type CategoryDomain } from "@/features/taxonomy/admin-service";
-import { categoryFormSchema, updateCategoryFormSchema } from "@/lib/validation";
+import { categoryFormSchema, updateCategoryFormSchema, categoryDomainSchema, idSchema } from "@/lib/validation";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -38,6 +38,9 @@ export async function updateCategoryAction(domain: CategoryDomain, id: string, i
 }
 
 export async function deleteCategoryAction(domain: CategoryDomain, id: string): Promise<ActionResult<null>> {
+  const parsedDomain = categoryDomainSchema.safeParse(domain);
+  const parsedId = idSchema.safeParse(id);
+  if (!parsedDomain.success || !parsedId.success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminDeleteCategory(session, domain, id);

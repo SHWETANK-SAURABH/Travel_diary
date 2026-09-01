@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { adminCreateFood, adminUpdateFood, adminSetFoodStatus, type FoodWriteInput } from "@/features/food/admin-service";
 import { adminCreateMedia, adminDeleteMedia, type MediaWriteInput } from "@/features/media/admin-service";
-import { foodFormSchema, updateFoodFormSchema, mediaFormSchema } from "@/lib/validation";
+import { foodFormSchema, updateFoodFormSchema, mediaFormSchema, contentStatusSchema, idSchema } from "@/lib/validation";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -40,6 +40,7 @@ export async function updateFoodAction(id: string, input: unknown): Promise<Acti
 }
 
 export async function setFoodStatusAction(id: string, status: "DRAFT" | "PUBLISHED" | "ARCHIVED"): Promise<ActionResult<null>> {
+  if (!idSchema.safeParse(id).success || !contentStatusSchema.safeParse(status).success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminSetFoodStatus(session, id, status);
@@ -65,6 +66,7 @@ export async function addFoodMediaAction(input: unknown): Promise<ActionResult<n
 }
 
 export async function deleteFoodMediaAction(mediaId: string, foodId: string): Promise<ActionResult<null>> {
+  if (!idSchema.safeParse(mediaId).success || !idSchema.safeParse(foodId).success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminDeleteMedia(session, mediaId);

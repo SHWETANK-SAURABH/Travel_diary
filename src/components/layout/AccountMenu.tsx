@@ -29,6 +29,7 @@ export function AccountMenu() {
       trigger={
         <span className="flex h-9 w-9 items-center justify-center rounded-full bg-marigold-50 text-marigold-600">
           <User className="h-4 w-4" aria-hidden="true" />
+          <span className="sr-only">Account menu</span>
         </span>
       }
     >

@@ -116,7 +116,11 @@ export async function adminUpdateExperience(session: Session | null, id: string,
 
 export async function adminSetExperienceStatus(session: Session | null, id: string, status: ContentStatus) {
   requireAdmin(session);
-  const experience = await db.experience.update({ where: { id }, data: { status }, select: { id: true, name: true } });
-  await audit.record({ adminId: session.user.id, action: status === "PUBLISHED" ? "published" : status === "ARCHIVED" ? "archived" : "unpublished", entityType: "EXPERIENCE", entityId: id, entityLabel: experience.name });
-  return experience;
+  try {
+    const experience = await db.experience.update({ where: { id }, data: { status }, select: { id: true, name: true } });
+    await audit.record({ adminId: session.user.id, action: status === "PUBLISHED" ? "published" : status === "ARCHIVED" ? "archived" : "unpublished", entityType: "EXPERIENCE", entityId: id, entityLabel: experience.name });
+    return experience;
+  } catch (error) {
+    throw friendlyDbError(error);
+  }
 }

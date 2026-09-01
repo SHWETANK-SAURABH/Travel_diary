@@ -33,6 +33,9 @@ App runs at `http://localhost:3000`.
 | `npm run start` | Run the production build |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
+| `npm run test` | Unit tests (Vitest) |
+| `npm run test:watch` | Unit tests in watch mode |
+| `npm run test:e2e` | End-to-end tests (Playwright) — see [`testing.md`](./testing.md) |
 | `npm run db:migrate` | `prisma migrate dev` — create/apply a migration |
 | `npm run db:seed` | Re-run the demo seed (idempotent) |
 | `npm run db:studio` | Open Prisma Studio to browse the database |
@@ -78,6 +81,14 @@ rather than silently breaking the rest of the app.
 
 See [`architecture.md`](./architecture.md) for the module layout and the
 reasoning behind it.
+
+## Testing
+
+See [`testing.md`](./testing.md) for the full picture (unit vs. E2E split,
+what each covers, how to run them, how CI runs them). Short version:
+`npm run test` for pure-logic unit tests (no DB), `npm run test:e2e` for
+Playwright tests that need a running server and a real Postgres — same one
+`docker compose up -d` already gives you locally.
 
 ## Adding a new content field
 

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { adminCreateLocation, adminUpdateLocation, adminDeleteLocation, type LocationWriteInput } from "@/features/locations/admin-service";
-import { locationFormSchema, updateLocationFormSchema } from "@/lib/validation";
+import { locationFormSchema, updateLocationFormSchema, idSchema } from "@/lib/validation";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -40,6 +40,7 @@ export async function updateLocationAction(id: string, input: unknown): Promise<
 }
 
 export async function deleteLocationAction(id: string): Promise<ActionResult<null> | void> {
+  if (!idSchema.safeParse(id).success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminDeleteLocation(session, id);

@@ -3,6 +3,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { requireAdmin, UnauthorizedError } from "@/features/admin/service";
 import { containsInsensitive } from "@/lib/search";
+import { adminSearchQuerySchema } from "@/lib/validation";
 
 const SEARCHERS: Record<string, (q: string) => Promise<{ id: string; name: string }[]>> = {
   festival: (q) => db.festival.findMany({ where: { name: containsInsensitive(q) }, select: { id: true, name: true }, take: 20 }),
@@ -33,13 +34,12 @@ export async function GET(request: Request) {
   }
 
   const { searchParams } = new URL(request.url);
-  const type = searchParams.get("type") ?? "";
-  const q = (searchParams.get("q") ?? "").trim();
+  const parsed = adminSearchQuerySchema.safeParse(Object.fromEntries(searchParams));
+  if (!parsed.success) return NextResponse.json({ error: "Unknown search type" }, { status: 400 });
 
-  const searcher = SEARCHERS[type];
-  if (!searcher) return NextResponse.json({ error: "Unknown search type" }, { status: 400 });
-  if (q.length < 1) return NextResponse.json({ results: [] });
+  const { type, q } = parsed.data;
+  if (!q || q.length < 1) return NextResponse.json({ results: [] });
 
-  const results = await searcher(q);
+  const results = await SEARCHERS[type](q);
   return NextResponse.json({ results });
 }

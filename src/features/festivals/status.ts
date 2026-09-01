@@ -8,6 +8,15 @@ export interface OccurrenceLike {
   dateConfidence: DateConfidence;
 }
 
+/** Admin-entered occurrence dates carry no meaningful time-of-day — they're calendar days, stored as UTC midnight. */
+function endOfDayUTC(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 23, 59, 59, 999));
+}
+
+function startOfDayUTC(date: Date): Date {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+}
+
 /**
  * Derives the display status the spec calls for (Happening Now / Upcoming /
  * Past / Expected Date / Date Not Announced) from one occurrence row. Never
@@ -22,15 +31,19 @@ export function resolveFestivalStatus(occurrence: OccurrenceLike | null | undefi
   }
 
   const start = occurrence.startDate;
-  const end = occurrence.endDate ?? occurrence.startDate;
+  // The end boundary must cover the whole of its calendar day — both the
+  // no-endDate single-day case and an explicit multi-day endDate — or a
+  // festival flips to PAST the instant that day's UTC midnight ticks over,
+  // hours before the day it's naming has actually finished.
+  const end = endOfDayUTC(occurrence.endDate ?? occurrence.startDate);
 
   if (now >= start && now <= end) return "HAPPENING_NOW";
   if (now < start) return "UPCOMING";
   return "PAST";
 }
 
-/** Whole days from `now` to `date`, rounded up — 0 means "today". Negative means the date has passed. */
+/** Whole calendar days from `now` to `date` — 0 means "today" (regardless of either value's time-of-day). Negative means the date has passed. */
 export function daysUntil(date: Date, now = new Date()): number {
   const msPerDay = 1000 * 60 * 60 * 24;
-  return Math.ceil((date.getTime() - now.getTime()) / msPerDay);
+  return Math.round((startOfDayUTC(date).getTime() - startOfDayUTC(now).getTime()) / msPerDay);
 }

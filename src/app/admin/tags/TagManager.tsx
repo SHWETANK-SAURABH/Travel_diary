@@ -53,7 +53,7 @@ export function TagManager({ tags }: { tags: TagRow[] }) {
         <Button onClick={handleCreate} loading={saving} disabled={!name.trim()}>
           Add tag
         </Button>
-        {error && <p className="w-full text-caption text-danger">{error}</p>}
+        {error && <p role="alert" className="w-full text-caption text-danger">{error}</p>}
       </div>
 
       <div className="flex flex-wrap gap-2">

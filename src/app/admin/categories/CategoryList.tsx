@@ -57,7 +57,7 @@ export function CategoryList({ domain, title, initial }: { domain: CategoryDomai
           </Button>
         </div>
       )}
-      {error && <p className="mt-1 text-caption text-danger">{error}</p>}
+      {error && <p role="alert" className="mt-1 text-caption text-danger">{error}</p>}
 
       <div className="mt-3 flex flex-col gap-2">
         {initial.length === 0 && <p className="text-caption text-ink-muted">No categories yet.</p>}
@@ -110,7 +110,7 @@ function CategoryRowItem({ domain, category }: { domain: CategoryDomain; categor
           <Button size="sm" variant="ghost" onClick={() => setEditing(false)}>
             Cancel
           </Button>
-          {error && <span className="text-caption text-danger">{error}</span>}
+          {error && <span role="alert" className="text-caption text-danger">{error}</span>}
         </div>
       ) : (
         <>

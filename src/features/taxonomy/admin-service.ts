@@ -127,9 +127,13 @@ export async function adminCreateTag(session: Session | null, input: TagWriteInp
   if (existing) throw new Error(`A tag named "${name}" already exists${existing.archived ? " (archived — unarchive it instead)" : ""}.`);
 
   const slug = await ensureUniqueSlug(slugify(name), async (candidate) => (await db.tag.count({ where: { slug: candidate } })) > 0);
-  const tag = await db.tag.create({ data: { name, slug, category: input.category ?? "GENERAL" } });
-  await audit.record({ adminId: session.user.id, action: "created", entityType: "TAG", entityId: tag.id, entityLabel: tag.name });
-  return tag;
+  try {
+    const tag = await db.tag.create({ data: { name, slug, category: input.category ?? "GENERAL" } });
+    await audit.record({ adminId: session.user.id, action: "created", entityType: "TAG", entityId: tag.id, entityLabel: tag.name });
+    return tag;
+  } catch (error) {
+    throw friendlyDbError(error);
+  }
 }
 
 export async function adminRenameTag(session: Session | null, id: string, name: string) {
@@ -138,14 +142,22 @@ export async function adminRenameTag(session: Session | null, id: string, name: 
   const existing = await db.tag.findFirst({ where: { name: { equals: normalized, mode: "insensitive" }, id: { not: id } } });
   if (existing) throw new Error(`A tag named "${normalized}" already exists.`);
 
-  const tag = await db.tag.update({ where: { id }, data: { name: normalized } });
-  await audit.record({ adminId: session.user.id, action: "renamed", entityType: "TAG", entityId: tag.id, entityLabel: tag.name });
-  return tag;
+  try {
+    const tag = await db.tag.update({ where: { id }, data: { name: normalized } });
+    await audit.record({ adminId: session.user.id, action: "renamed", entityType: "TAG", entityId: tag.id, entityLabel: tag.name });
+    return tag;
+  } catch (error) {
+    throw friendlyDbError(error);
+  }
 }
 
 export async function adminSetTagArchived(session: Session | null, id: string, archived: boolean) {
   requireAdmin(session);
-  const tag = await db.tag.update({ where: { id }, data: { archived } });
-  await audit.record({ adminId: session.user.id, action: archived ? "archived" : "unarchived", entityType: "TAG", entityId: tag.id, entityLabel: tag.name });
-  return tag;
+  try {
+    const tag = await db.tag.update({ where: { id }, data: { archived } });
+    await audit.record({ adminId: session.user.id, action: archived ? "archived" : "unarchived", entityType: "TAG", entityId: tag.id, entityLabel: tag.name });
+    return tag;
+  } catch (error) {
+    throw friendlyDbError(error);
+  }
 }

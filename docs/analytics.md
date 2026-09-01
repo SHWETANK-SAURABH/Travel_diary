@@ -290,3 +290,14 @@ the same three ways Phase 10's CMS is (route middleware, layout session
 check, per-query `requireAdmin()`). A signed-in user's own saved
 content/trips remain visible only to them through the ordinary account
 UI, never through analytics tooling.
+
+## Phase 12 touches
+
+No architectural change — the three-layer design above was re-verified
+intact, not revised. Two small hardening fixes: `AnalyticsEvent.userId`
+gained an index it was missing (`docs/database.md`'s "Phase 12: hardening
+indexes"), and `dismissContentOpportunityAction`'s `normalizedQuery`
+argument gained Zod validation (`dismissedQuerySchema`) — it took a bare
+`string` Server Action argument with no runtime check, one of 15 such gaps
+this phase's security audit found and closed across the admin CMS (see
+`docs/security.md`).

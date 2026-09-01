@@ -2256,4 +2256,313 @@ and a regression sweep of `/explore`, `/map`, `/trips`, `/admin`.
 
 ---
 
-<!-- Phase 12+ reports appended below as each phase completes. -->
+## Phase 12 — SEO, Performance, Security, Accessibility & Production Hardening
+
+**Status: complete.**
+
+### Summary
+
+Not a features phase — an audit-and-fix pass across all 11 prior phases'
+code, per this phase's own instruction to "produce an internal audit
+summary before making large changes before making large changes." Three
+independent audits (security, performance, accessibility+SEO) ran first
+and produced a written, evidence-cited findings list; every finding was
+re-verified against the actual code before being counted (a few claimed
+findings — the JSON-LD XSS escape, the trip-share 200-status — turned out
+to already be correct or expected framework behavior, and were documented
+as such rather than "fixed" a second time). This phase also built the
+automated test suite this project didn't have before: 78 Vitest unit
+tests and an 8-test Playwright E2E suite covering the three journeys
+spec §64 names explicitly, plus a GitHub Actions CI workflow.
+
+### 1. Security audit summary
+
+Full detail in the newly-required `docs/security.md`. Confirmed intact:
+the three-layer admin authorization stack (route middleware → layout
+session check → per-function `requireAdmin()`), Server Actions each
+independently re-deriving identity rather than trusting client input,
+draft content never leaking through a public query (every public
+`service.ts` filters `status: "PUBLISHED"` explicitly — verified by grep,
+not assumed). Two known, accepted dependency vulnerabilities documented
+(below). No secrets found in the repo or committed `.env` (it holds only
+local-dev docker-compose credentials, as already documented).
+
+### 2. Major security fixes
+
+- **15 Server Actions** took a bare scalar argument (`id`, `status`,
+  `domain`, `archived: boolean`) with zero runtime validation — a Server
+  Action is a callable network endpoint, and TypeScript's type only binds
+  the app's own compiled client, not an arbitrary request. Added
+  `idSchema`/`contentStatusSchema`/`categoryDomainSchema`/`tagNameSchema`
+  and a `safeParse` guard to each, across all 9 admin `actions.ts` files.
+- **2 API routes** (`/api/map/state/[slug]`, `/api/admin/search`) parsed
+  query params by hand instead of through a schema — brought in line with
+  the `safeParse` → 400-on-failure pattern every other query-param route
+  already used.
+- **12 admin mutation functions** skipped `friendlyDbError()` — a bare
+  `await db.x.update(...)` with nothing catching a thrown Prisma error,
+  which would let a raw error propagate instead of failing the same,
+  predictable way every other admin mutation does. Wrapped across
+  `destinations|experiences|festivals|food|media|taxonomy`'s
+  `admin-service.ts` files.
+- **Security headers added sitewide** (`next.config.ts`):
+  `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  `Referrer-Policy: strict-origin-when-cross-origin`, a `Permissions-
+  Policy` opting out of camera/microphone/geolocation. A
+  Content-Security-Policy was deliberately deferred — see `docs/
+  security.md` for why guessing one blind (this app loads MapLibre's
+  worker plus several environment-varying external hosts) was judged
+  worse than documenting the gap honestly.
+- **JSON-LD XSS escaping** — audit-flagged as missing on
+  `festivals/[slug]`/`destinations/[slug]`; verification found both
+  already had it (`.replace(/</g, "\\u003c")` after `JSON.stringify`).
+  False positive, documented as such rather than "re-fixed."
+
+### 3. SEO improvements
+
+- **`/festivals` and `/destinations` gained `alternates.canonical`**
+  pointing at their own unfiltered path — every state/month/category/
+  popularity filter combination renders at the same URL via query params,
+  and without this each filtered permutation was a distinct indexable
+  page competing with the canonical one.
+- **`/trips/new` gained `noindex`** via a new `src/app/trips/layout.tsx`.
+  It's a Client Component (can't export `metadata` itself), the only
+  private trip route that fell through the otherwise-consistent
+  `robots: { index: false }` pattern every other `/trips/*` page already
+  had.
+- **Confirmed, not changed**: `notFound()` across the app (festival/
+  destination/trip detail, the share page) returns HTTP `200` rather than
+  `404` on a raw request — expected Next.js 16 Cache Components behavior
+  (streaming commits the response status before `notFound()` can run),
+  compensated by an auto-injected `noindex` meta tag. Already documented
+  in this file's Phase 9 section; re-confirmed applicable here via
+  `node_modules/next/dist/docs`, not re-litigated as a new bug.
+
+### 4. Performance improvements
+
+- **`/trips/[id]/share/page.tsx` was statically frozen** — no
+  `searchParams`/`auth()`/`cookies()` use and no explicit `dynamic`
+  export meant Next's Full Route Cache treatment: cached indefinitely
+  after the first request, so a trip owner's edits never appeared to
+  anyone who'd already loaded the share link once. This is the third time
+  this exact bug class has hit the app (`/hidden-india`, `/explore`,
+  now this) — fixed the same way, `export const dynamic =
+  "force-dynamic"`, and flagged in `architecture.md` as a standing review
+  item for future dynamic pages.
+- **`adminListMedia`'s search filtered results *after* pagination** —
+  since Media has no name column of its own (it's resolved from the
+  parent content), a text search resolved labels for one already-paginated
+  DB page and filtered client-side, making `total` wrong and potentially
+  returning fewer than a full page despite more matches existing.
+  Rewritten to resolve matching `(contentType, contentId)` pairs from the
+  content tables first, then paginate the correctly-filtered query.
+- **Map viewport fetch gained cancellation** — a pan/zoom firing a new
+  `/api/map/viewport` request before the previous one resolved had no way
+  to cancel the stale one; wired react-query's `queryFn({ signal })`
+  through to `fetch`, so an in-flight request aborts instead of racing a
+  newer one and possibly overwriting it with stale data.
+- **Recommendation candidate queries gained a bounded cap.** The
+  personalized-path `db.destination.findMany`/`db.festival.findMany`
+  calls had no `take`, growing into a full-table scan as published
+  content grows. Capped at 200 (`RECOMMENDATION_CANDIDATE_CAP`),
+  `orderBy: { featured: "desc" }` first so the cap can't starve featured
+  content the scorer would otherwise rank top.
+
+### 5. Accessibility improvements
+
+- **Missing form labels**: sign-in's email input (`<label>` +
+  `htmlFor`), `RelationPicker`'s search input (same pattern via
+  `useId()`), `AccountMenu`'s icon-only trigger (an inner `sr-only` span,
+  matching the pattern `TripCard`'s own dropdown trigger already used).
+- **Global `:focus-visible` fallback** added to `globals.css` — most
+  interactive components already opt in with their own utility, this
+  backstops anything that doesn't.
+- **`ResponsivePanel` gained a real focus trap** — `role="dialog"
+  aria-modal="true"` was a promise the component didn't keep. Now moves
+  focus in on open, Tab/Shift+Tab wrap at the panel's edges, Escape
+  closes, and focus returns to whatever opened it on close (Modal already
+  got this for free from the native `<dialog>` element; ResponsivePanel
+  is a side-panel/bottom-sheet layout that can't use that, so it's
+  hand-rolled here).
+- **Touch targets bumped** on `TripItemCard`'s move/remove icon buttons
+  and `RelationPicker`'s remove-chip button, both previously under the
+  24px minimum.
+- **`role="alert"` added** to all 12 admin CMS form error messages, so a
+  screen reader announces a failed save immediately instead of the error
+  text sitting silently in the DOM.
+- **Known, accepted, not fixed**: map markers have no keyboard-accessible
+  click target (a WebGL-canvas architectural limitation — mitigated by
+  `/festivals`/`/destinations`/search already providing full non-map
+  access to every piece of content the map surfaces); `Dropdown` has
+  Escape-to-close but no full roving-tabindex trap (reused too widely —
+  header Explore menu, account menu, every admin table row — to risk a
+  regression this late for the remaining gap). Both reasoned through in
+  `docs/security.md`.
+
+### 6. Database/query optimizations
+
+Six missing indexes found and added (migration
+`20260901090000_hardening_indexes`): `Experience.status`, `Food.status`,
+`FestivalOccurrence.verifiedByUserId`, `TripItem.locationId`,
+`AnalyticsEvent.userId`, `ContentOpportunityDismissal.dismissedByUserId`
+— genuine gaps in FK/filter columns despite `database.md`'s prior "every
+FK" claim, found by reading every `where`/`orderBy` in
+`src/features/**/service.ts` against the actual index list rather than
+trusting the doc. See `database.md`'s "Phase 12: hardening indexes."
+
+### 7. Caching strategy
+
+No new caching layer added — the fix here was removing an *unintended*
+one (`/trips/[id]/share`'s static freeze, above). The app's existing
+per-page dynamic/static split (documented across `architecture.md`'s
+"Static rendering can silently freeze a 'live' content page" and its
+Phase 12 addition) remains the caching model: explicit `dynamic` /
+`revalidate` exports where content changes, static-by-default elsewhere.
+
+### 8. Error/reliability improvements
+
+`friendlyDbError()` coverage completed (12 functions, above) and Zod
+validation completed (17 gaps across 15 Server Actions + 2 API routes,
+above) are both reliability fixes as much as security ones — a request
+that used to either crash with a raw error or silently misbehave now
+fails predictably with an actionable message. `resolveFestivalStatus`/
+`daysUntil` (below) is the one correctness bug this phase found and
+fixed outright, not just hardened.
+
+### 9. Test coverage and critical flows tested
+
+**Unit (Vitest, `src/**/*.test.ts`)**: 78 tests across 11 files — festival
+temporal status, seasonal fit, recommendation scoring/diversity/
+explanation, trip budget estimation, slug generation, search
+normalization, month-range math. One of these caught a real, previously
+unnoticed bug: `resolveFestivalStatus`/`daysUntil`
+(`src/features/festivals/status.ts`) did raw millisecond arithmetic
+instead of calendar-day comparison, so a single-day festival flipped to
+"Past" the moment UTC midnight ticked over on its own day — hours before
+the day it was naming had actually finished for anyone in an India
+timezone — and `Countdown` could show "1 day to go" for something
+happening later that same day. Fixed by comparing whole UTC calendar days
+instead of timestamps; two of the first tests written caught it
+immediately.
+
+**E2E (Playwright, `tests/e2e/`)**: 8 tests across 3 spec files, matching
+the three journeys spec §64 ("FINAL PRODUCT AUDIT") names explicitly —
+Homepage→Explore→Map→Festival→Save→Trip(create/add/reorder)→Share (ending
+by opening the share link in a fresh unauthenticated browser context to
+confirm it actually renders publicly), Search→Result→Content, and
+Admin→Edit→Publish→Public page updated. Authenticates via a real database
+session row (`session: { strategy: "database" }`) rather than automating
+Google's OAuth UI. Full detail, including two real test-authoring
+mistakes this suite exposed and fixed (a substring-match locator
+un-saving what the previous run had saved; `networkidle` waits that never
+resolve on a page with a live map widget), in the new `docs/testing.md`.
+
+### 10. CI/deployment setup
+
+`.github/workflows/ci.yml`: install → generate Prisma client → lint →
+typecheck → migrate a `postgis/postgis:16-3.4-alpine` service container
+(matching `docker-compose.yml`'s local image, since the schema needs
+PostGIS) → seed → unit tests → production build → Playwright install →
+E2E tests, with the Playwright HTML report uploaded as a build artifact
+on failure. Runs on every push/PR to `main`. Deployment itself (an actual
+hosting provider, domain, live monitoring) is Phase 14's job — this phase
+produced the runbook (`docs/production.md`) it'll follow, not a live
+deployment.
+
+### 11. Environment configuration
+
+No new required environment variables this phase. `docs/production.md`
+documents which of `.env.example`'s variables are load-bearing in
+production (`DATABASE_URL`, `AUTH_SECRET`, `AUTH_URL`) versus
+gracefully-degrading, and the one exception (`MEDIA_STORAGE_*` throws
+loudly rather than degrading, by design).
+
+### 12. Backup/recovery documentation
+
+Documented in `docs/production.md` as infrastructure the hosting provider
+owns, not application code — this phase didn't (and structurally
+couldn't) automate backups for a database that doesn't exist in
+production yet. Minimum bar recorded for Phase 14: automated daily
+backups, 7+ day retention, one verified test restore before go-live.
+
+### 13. Monitoring/observability setup
+
+No new capability — Phase 11 already built `/api/health`, `ErrorLog`, and
+`PerformanceLog`. This phase's contribution is documentation
+(`docs/production.md`'s "Monitoring & observability") making explicit
+what exists (health check, error capture, performance timing) versus
+what's still missing and belongs to Phase 14 (alerting — nothing pages
+anyone today when `/api/health` fails or `ErrorLog` spikes — and any
+monitoring external to the app's own infrastructure).
+
+### 14. Files created/modified
+
+**New**: `docs/production.md`, `docs/security.md`, `docs/testing.md`;
+`.github/workflows/ci.yml`; `playwright.config.ts`, `vitest.config.mts`;
+`tests/e2e/{primary-journey,search,admin-publish}.spec.ts` +
+`tests/e2e/helpers/session.ts`; 11 unit test files under `src/**/*.test.ts`;
+`src/app/trips/layout.tsx`; `prisma/migrations/20260901090000_hardening_indexes/`.
+
+**Modified**: `next.config.ts` (security headers); `prisma/schema.prisma`
+(6 indexes); `src/features/festivals/status.ts` (calendar-day fix);
+`src/features/recommendations/service.ts` (candidate cap);
+`src/features/media/admin-service.ts` (search-before-pagination fix); 6
+more `admin-service.ts` files (`friendlyDbError` wrapping); 9 admin
+`actions.ts` files (Zod validation); `src/lib/validation/{admin,map}.ts`
+(new schemas); `src/app/api/{admin/search,map/state/[slug]}/route.ts`;
+`src/app/trips/[id]/share/page.tsx` (force-dynamic);
+`src/app/{festivals,destinations}/page.tsx` (canonical);
+`src/app/map/MapPageClient.tsx` (fetch cancellation);
+`src/app/auth/sign-in/SignInForm.tsx`, `src/components/admin/
+RelationPicker.tsx`, `src/components/layout/AccountMenu.tsx` (labels);
+`src/components/ui/ResponsivePanel.tsx` (focus trap);
+`src/components/trips/TripItemCard.tsx` (touch targets); `src/app/
+globals.css` (focus-visible fallback); 9 admin form/manager `.tsx` files
+(`role="alert"`); `docs/{architecture,database,analytics,development}.md`.
+
+### 15. Remaining known issues
+
+- **No rate limiting anywhere** — sign-in, search, admin mutations all
+  unprotected against abuse. Acceptable pre-launch (nothing publicly
+  deployed yet), but the top item for Phase 14 before it is.
+- **No Content-Security-Policy** — deliberately deferred; needs the real
+  production provider hosts to author correctly, not guessed blind (see
+  `docs/security.md`).
+- **Two accepted dependency vulnerabilities** (`nodemailer` — no fix
+  available; `deepmerge-ts` via `prisma` — fix requires an unsafe
+  downgrade), both with unreachable vulnerable code paths in this app —
+  see `docs/security.md`'s table.
+- **`Dropdown` lacks a full keyboard focus trap**; **map markers aren't
+  keyboard-accessible** — both reasoned through above and in
+  `docs/security.md`, not silently unaddressed.
+- **No alerting** on `/api/health` failures or `ErrorLog` spikes — belongs
+  to Phase 14.
+- **E2E coverage is 3 journeys, not exhaustive** — the ones spec §64 names
+  explicitly, not every admin CRUD path or edge case. Deliberate scope
+  for this phase, not a gap to be alarmed by.
+
+### 16. Recommended final pre-launch checklist
+
+1. Add rate limiting to sign-in, search, and admin mutation endpoints.
+2. Author and test a real Content-Security-Policy against the actual
+   production provider hosts.
+3. Choose and provision the production database (managed Postgres with
+   PostGIS — see `docs/production.md`), verify point-in-time recovery is
+   actually enabled, perform one test restore.
+4. Set real `AUTH_SECRET`/`DATABASE_URL`/`AUTH_URL` and OAuth callback
+   URLs matching the real domain — never the committed local-dev `.env`.
+5. Wire alerting to `/api/health` and `ErrorLog` (uptime monitor +
+   threshold alert, at minimum).
+6. Re-run `npm audit --omit=dev` — revisit the two accepted vulnerabilities
+   in case an upstream fix has shipped.
+7. Confirm `MEDIA_STORAGE_*` and `MAP_PROVIDER_KEY` are configured with
+   real production values (both silently/loudly degrade without them —
+   see `docs/production.md`).
+8. Run the full CI pipeline (`.github/workflows/ci.yml`) green on the
+   exact commit being deployed, not an earlier one.
+9. Manually walk the three journeys spec §64 names, in a real browser,
+   against the deployed (not local) environment, once.
+
+---
+
+<!-- Phase 13+ reports appended below as each phase completes. -->

@@ -85,7 +85,7 @@ export function AddMediaForm() {
           <span className="font-medium">Order</span>
           <Input type="number" min={0} value={order} onChange={(e) => setOrder(Number(e.target.value))} className="w-24" />
         </label>
-        {error && <p className="text-caption text-danger">{error}</p>}
+        {error && <p role="alert" className="text-caption text-danger">{error}</p>}
         <Button size="sm" onClick={handleAdd} loading={saving} disabled={!url.trim() || !content[0]} className="self-start">
           Add image
         </Button>

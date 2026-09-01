@@ -133,7 +133,11 @@ export function MapPageClient() {
 
   const { data: discoveries = [] } = useQuery({
     queryKey: ["map-viewport", box, month],
-    queryFn: async (): Promise<MapDiscovery[]> => {
+    // A pan/zoom can fire a new viewport fetch before the previous one
+    // resolves — passing `signal` through lets react-query abort the
+    // stale request instead of letting a late response overwrite fresher
+    // map data.
+    queryFn: async ({ signal }): Promise<MapDiscovery[]> => {
       if (!box) return [];
       const params = new URLSearchParams({
         minLat: String(box.minLat),
@@ -142,7 +146,7 @@ export function MapPageClient() {
         maxLng: String(box.maxLng),
       });
       if (month) params.set("month", String(month));
-      const res = await fetch(`/api/map/viewport?${params.toString()}`);
+      const res = await fetch(`/api/map/viewport?${params.toString()}`, { signal });
       const data = await res.json();
       return data.discoveries ?? [];
     },

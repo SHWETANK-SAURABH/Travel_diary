@@ -280,7 +280,7 @@ export function DestinationForm({ mode, categories, initial }: { mode: "create" 
         </TabPanel>
       </Tabs>
 
-      {error && <p className="text-caption text-danger">{error}</p>}
+      {error && <p role="alert" className="text-caption text-danger">{error}</p>}
 
       <div className="flex gap-2 border-t border-border pt-4">
         <Button onClick={handleSave} loading={saving} disabled={!name.trim() || !description.trim() || !location[0]}>

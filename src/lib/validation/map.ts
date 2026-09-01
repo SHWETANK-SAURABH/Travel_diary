@@ -12,6 +12,10 @@ export const mapSearchQuerySchema = z.object({
   q: z.string().min(2).max(100),
 });
 
+export const stateSummaryQuerySchema = z.object({
+  month: z.coerce.number().int().min(1).max(12).optional(),
+});
+
 export const mapDiscoveryQuerySchema = z.object({
   kind: z.enum(["festival", "destination", "experience", "event"]),
   /** A slug for festival/destination/experience; the raw id for event (which has no slug). */

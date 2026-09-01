@@ -63,13 +63,13 @@ export function TripItemCard({ item, dayOptions, onRemove, onMoveDay, onMoveUp, 
         </button>
 
         <div className="flex shrink-0 items-center gap-1">
-          <button type="button" onClick={onMoveUp} disabled={!canMoveUp} aria-label="Move up" className="rounded p-1 text-ink-muted hover:bg-marigold-50 hover:text-ink disabled:opacity-30">
+          <button type="button" onClick={onMoveUp} disabled={!canMoveUp} aria-label="Move up" className="rounded p-1.5 text-ink-muted hover:bg-marigold-50 hover:text-ink disabled:opacity-30">
             <ArrowUp className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
-          <button type="button" onClick={onMoveDown} disabled={!canMoveDown} aria-label="Move down" className="rounded p-1 text-ink-muted hover:bg-marigold-50 hover:text-ink disabled:opacity-30">
+          <button type="button" onClick={onMoveDown} disabled={!canMoveDown} aria-label="Move down" className="rounded p-1.5 text-ink-muted hover:bg-marigold-50 hover:text-ink disabled:opacity-30">
             <ArrowDown className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
-          <button type="button" onClick={onRemove} aria-label={`Remove ${content.name} from trip`} className="rounded p-1 text-ink-muted hover:bg-marigold-50 hover:text-ink">
+          <button type="button" onClick={onRemove} aria-label={`Remove ${content.name} from trip`} className="rounded p-1.5 text-ink-muted hover:bg-marigold-50 hover:text-ink">
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </div>

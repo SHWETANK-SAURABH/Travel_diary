@@ -247,7 +247,7 @@ export function FestivalForm({ mode, categories, initial }: { mode: "create" | "
         )}
       </Tabs>
 
-      {error && <p className="text-caption text-danger">{error}</p>}
+      {error && <p role="alert" className="text-caption text-danger">{error}</p>}
 
       <div className="flex gap-2 border-t border-border pt-4">
         <Button onClick={handleSave} loading={saving} disabled={!name.trim() || !description.trim() || !location[0]}>
@@ -350,7 +350,7 @@ function OccurrencesEditor({ festivalId, occurrences }: { festivalId: string; oc
           <Field label="Notes">
             <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} />
           </Field>
-          {error && <p className="text-caption text-danger">{error}</p>}
+          {error && <p role="alert" className="text-caption text-danger">{error}</p>}
           <Button size="sm" onClick={handleAdd} loading={saving} className="self-start">
             Save dates
           </Button>
@@ -403,7 +403,7 @@ function VerificationEditor({
       <Field label="Source">
         <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="e.g. Called tourism office, Aug 2026" />
       </Field>
-      {error && <p className="text-caption text-danger">{error}</p>}
+      {error && <p role="alert" className="text-caption text-danger">{error}</p>}
       <Button size="sm" onClick={handleSave} loading={saving} className="self-start">
         Update verification
       </Button>
@@ -486,7 +486,7 @@ export function MediaEditor({
           <Field label="Order">
             <Input type="number" min={0} value={order} onChange={(e) => setOrder(Number(e.target.value))} className="w-24" />
           </Field>
-          {error && <p className="text-caption text-danger">{error}</p>}
+          {error && <p role="alert" className="text-caption text-danger">{error}</p>}
           <Button size="sm" onClick={handleAdd} loading={saving} disabled={!url.trim()} className="self-start">
             Add image
           </Button>

@@ -11,6 +11,11 @@ import type { ContentPopularity } from "@prisma/client";
 export const metadata: Metadata = {
   title: "Destinations",
   description: "Browse India's destinations — famous and hidden, by budget, by state, and by season.",
+  // Every state/month/category/popularity/budget filter combination renders
+  // at this same path via query params — canonicalize to the unfiltered
+  // page so search engines consolidate signal here instead of indexing each
+  // filtered permutation as a separate page.
+  alternates: { canonical: "/destinations" },
 };
 
 interface PageProps {

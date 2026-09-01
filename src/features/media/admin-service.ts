@@ -18,12 +18,32 @@ const CONTENT_LABEL_QUERY: Record<ContentType, (ids: string[]) => Promise<{ id: 
   EVENT: (ids) => db.event.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
 };
 
+const CONTENT_NAME_SEARCH: Record<ContentType, (search: string) => Promise<{ id: string }[]>> = {
+  FESTIVAL: (search) => db.festival.findMany({ where: { name: { contains: search, mode: "insensitive" } }, select: { id: true } }),
+  DESTINATION: (search) => db.destination.findMany({ where: { name: { contains: search, mode: "insensitive" } }, select: { id: true } }),
+  EXPERIENCE: (search) => db.experience.findMany({ where: { name: { contains: search, mode: "insensitive" } }, select: { id: true } }),
+  FOOD: (search) => db.food.findMany({ where: { name: { contains: search, mode: "insensitive" } }, select: { id: true } }),
+  EVENT: (search) => db.event.findMany({ where: { name: { contains: search, mode: "insensitive" } }, select: { id: true } }),
+};
+
 /** Media has no name of its own — every list view needs its parent content's name, resolved the same batched-per-type way Media's own polymorphic reads always are (see src/lib/content/resolve.ts). */
 export async function adminListMedia(session: Session | null, filters: AdminMediaListFilters = {}) {
   requireAdmin(session);
   const page = filters.page ?? 1;
   const pageSize = 40;
-  const where = { contentType: filters.contentType };
+
+  // Media has no name column, so a text search has to resolve to a set of
+  // (contentType, contentId) pairs *before* pagination — filtering the
+  // resolved labels of an already-paginated page would make `total` wrong
+  // and could return fewer than `pageSize` items despite more matches existing.
+  let where: { contentType?: ContentType; OR?: { contentType: ContentType; contentId: { in: string[] } }[] } = { contentType: filters.contentType };
+  if (filters.search) {
+    const types = filters.contentType ? [filters.contentType] : (Object.keys(CONTENT_NAME_SEARCH) as ContentType[]);
+    const matches = await Promise.all(types.map(async (type) => ({ type, rows: await CONTENT_NAME_SEARCH[type](filters.search!) })));
+    const orConditions = matches.filter(({ rows }) => rows.length > 0).map(({ type, rows }) => ({ contentType: type, contentId: { in: rows.map((r) => r.id) } }));
+    if (orConditions.length === 0) return { items: [], total: 0, page, pageSize };
+    where = { OR: orConditions };
+  }
 
   const [items, total] = await Promise.all([
     db.media.findMany({ where, orderBy: [{ contentType: "asc" }, { contentId: "asc" }, { order: "asc" }], skip: (page - 1) * pageSize, take: pageSize }),
@@ -36,9 +56,7 @@ export async function adminListMedia(session: Session | null, filters: AdminMedi
   const labelByKey = new Map<string, string>();
   for (const [type, rows] of labelEntries) for (const row of rows) labelByKey.set(`${type}:${row.id}`, row.name);
 
-  const withLabels = items
-    .map((item) => ({ ...item, contentLabel: labelByKey.get(`${item.contentType}:${item.contentId}`) ?? null }))
-    .filter((item) => !filters.search || item.contentLabel?.toLowerCase().includes(filters.search!.toLowerCase()));
+  const withLabels = items.map((item) => ({ ...item, contentLabel: labelByKey.get(`${item.contentType}:${item.contentId}`) ?? null }));
 
   return { items: withLabels, total, page, pageSize };
 }
@@ -75,13 +93,21 @@ export async function adminCreateMedia(session: Session | null, input: MediaWrit
 
 export async function adminUpdateMedia(session: Session | null, id: string, input: { altText?: string; order?: number }) {
   requireAdmin(session);
-  const media = await db.media.update({ where: { id }, data: { altText: input.altText, order: input.order } });
-  await audit.record({ adminId: session.user.id, action: "updated", entityType: "MEDIA", entityId: media.id });
-  return media;
+  try {
+    const media = await db.media.update({ where: { id }, data: { altText: input.altText, order: input.order } });
+    await audit.record({ adminId: session.user.id, action: "updated", entityType: "MEDIA", entityId: media.id });
+    return media;
+  } catch (error) {
+    throw friendlyDbError(error);
+  }
 }
 
 export async function adminDeleteMedia(session: Session | null, id: string) {
   requireAdmin(session);
-  await db.media.delete({ where: { id } });
-  await audit.record({ adminId: session.user.id, action: "deleted", entityType: "MEDIA", entityId: id });
+  try {
+    await db.media.delete({ where: { id } });
+    await audit.record({ adminId: session.user.id, action: "deleted", entityType: "MEDIA", entityId: id });
+  } catch (error) {
+    throw friendlyDbError(error);
+  }
 }

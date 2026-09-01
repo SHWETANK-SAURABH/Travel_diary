@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { adminCreateTag, adminRenameTag, adminSetTagArchived } from "@/features/taxonomy/admin-service";
-import { tagFormSchema } from "@/lib/validation";
+import { tagFormSchema, tagNameSchema, idSchema } from "@/lib/validation";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -25,6 +25,7 @@ export async function createTagAction(input: unknown): Promise<ActionResult<null
 }
 
 export async function renameTagAction(id: string, name: string): Promise<ActionResult<null>> {
+  if (!idSchema.safeParse(id).success || !tagNameSchema.safeParse(name).success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminRenameTag(session, id, name);
@@ -36,6 +37,7 @@ export async function renameTagAction(id: string, name: string): Promise<ActionR
 }
 
 export async function setTagArchivedAction(id: string, archived: boolean): Promise<ActionResult<null>> {
+  if (!idSchema.safeParse(id).success || typeof archived !== "boolean") return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminSetTagArchived(session, id, archived);

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
 import { adminCreateExperience, adminUpdateExperience, adminSetExperienceStatus, type ExperienceWriteInput } from "@/features/experiences/admin-service";
 import { adminCreateMedia, adminDeleteMedia, type MediaWriteInput } from "@/features/media/admin-service";
-import { experienceFormSchema, updateExperienceFormSchema, mediaFormSchema } from "@/lib/validation";
+import { experienceFormSchema, updateExperienceFormSchema, mediaFormSchema, contentStatusSchema, idSchema } from "@/lib/validation";
 
 type ActionResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
@@ -40,6 +40,7 @@ export async function updateExperienceAction(id: string, input: unknown): Promis
 }
 
 export async function setExperienceStatusAction(id: string, status: "DRAFT" | "PUBLISHED" | "ARCHIVED"): Promise<ActionResult<null>> {
+  if (!idSchema.safeParse(id).success || !contentStatusSchema.safeParse(status).success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminSetExperienceStatus(session, id, status);
@@ -65,6 +66,7 @@ export async function addExperienceMediaAction(input: unknown): Promise<ActionRe
 }
 
 export async function deleteExperienceMediaAction(mediaId: string, experienceId: string): Promise<ActionResult<null>> {
+  if (!idSchema.safeParse(mediaId).success || !idSchema.safeParse(experienceId).success) return { ok: false, error: "Invalid input" };
   try {
     const session = await auth();
     await adminDeleteMedia(session, mediaId);

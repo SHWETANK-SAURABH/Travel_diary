@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  DATABASE_URL: "postgresql://traveldiary:traveldiary@localhost:5432/traveldiary?schema=public"
+  AUTH_SECRET: "ci-only-not-a-real-secret-do-not-reuse"
+  AUTH_URL: "http://localhost:3000"
+  NODE_ENV: "test"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Matches docker-compose.yml's local dev image (PostGIS on top of
+        # Postgres 16) — the app depends on the `geography` column type
+        # (see prisma/schema.prisma), which plain postgres:16 doesn't have.
+        image: postgis/postgis:16-3.4-alpine
+        env:
+          POSTGRES_USER: traveldiary
+          POSTGRES_PASSWORD: traveldiary
+          POSTGRES_DB: traveldiary
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Apply database migrations
+        run: npx prisma migrate deploy
+
+      - name: Seed database
+        # The E2E suite anchors on specific seeded slugs (e.g. hornbill-festival,
+        # jaisalmer-fort) — see tests/e2e/*.spec.ts.
+        run: npm run db:seed
+
+      - name: Unit tests
+        run: npm run test
+
+      - name: Production build
+        run: npm run build
+
+      - name: Install Playwright's browser
+        run: npx playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: npm run test:e2e
+        env:
+          CI: true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 14

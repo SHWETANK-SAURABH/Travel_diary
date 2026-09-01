@@ -120,7 +120,7 @@ export function ExperienceForm({ mode, initial }: { mode: "create" | "edit"; ini
         </div>
       )}
 
-      {error && <p className="text-caption text-danger">{error}</p>}
+      {error && <p role="alert" className="text-caption text-danger">{error}</p>}
       <div className="border-t border-border pt-4">
         <Button onClick={handleSave} loading={saving} disabled={!name.trim() || !description.trim() || !location[0]}>
           {mode === "create" ? "Create experience" : "Save changes"}

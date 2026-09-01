@@ -110,7 +110,11 @@ export async function adminUpdateFood(session: Session | null, id: string, input
 
 export async function adminSetFoodStatus(session: Session | null, id: string, status: ContentStatus) {
   requireAdmin(session);
-  const food = await db.food.update({ where: { id }, data: { status }, select: { id: true, name: true } });
-  await audit.record({ adminId: session.user.id, action: status === "PUBLISHED" ? "published" : status === "ARCHIVED" ? "archived" : "unpublished", entityType: "FOOD", entityId: id, entityLabel: food.name });
-  return food;
+  try {
+    const food = await db.food.update({ where: { id }, data: { status }, select: { id: true, name: true } });
+    await audit.record({ adminId: session.user.id, action: status === "PUBLISHED" ? "published" : status === "ARCHIVED" ? "archived" : "unpublished", entityType: "FOOD", entityId: id, entityLabel: food.name });
+    return food;
+  } catch (error) {
+    throw friendlyDbError(error);
+  }
 }

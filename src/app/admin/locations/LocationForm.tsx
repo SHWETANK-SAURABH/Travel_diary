@@ -132,7 +132,7 @@ export function LocationForm({ mode, initial }: { mode: "create" | "edit"; initi
         <Textarea value={accommodationNotes} onChange={(e) => setAccommodationNotes(e.target.value)} />
       </Field>
 
-      {error && <p className="text-caption text-danger">{error}</p>}
+      {error && <p role="alert" className="text-caption text-danger">{error}</p>}
       <div className="flex items-center gap-3 border-t border-border pt-4">
         <Button onClick={handleSave} loading={saving} disabled={!name.trim()}>
           {mode === "create" ? "Create location" : "Save changes"}

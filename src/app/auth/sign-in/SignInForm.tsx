@@ -35,7 +35,11 @@ export function SignInForm({ callbackUrl }: { callbackUrl: string }) {
         }}
         className="flex flex-col gap-3"
       >
+        <label htmlFor="sign-in-email" className="sr-only">
+          Email address
+        </label>
         <Input
+          id="sign-in-email"
           type="email"
           required
           placeholder="you@example.com"
